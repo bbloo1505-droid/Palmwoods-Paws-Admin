@@ -1,0 +1,162 @@
+export type ServiceType =
+  | "dog_walk"
+  | "pet_visit"
+  | "pet_feeding"
+  | "pet_minding"
+  | "other";
+
+export type BookingStatus = "scheduled" | "cancelled" | "completed";
+export type VisitStatus = "in_progress" | "completed" | "cancelled";
+export type InvoiceStatus = "owed" | "paid" | "void";
+
+export type Profile = {
+  id: string;
+  full_name: string | null;
+  email: string | null;
+  created_at: string;
+};
+
+export type Client = {
+  id: string;
+  owner_id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  suburb: string | null;
+  notes: string | null;
+  emergency_contact: string | null;
+  preferred_payment: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type HouseInfo = {
+  client_id: string;
+  key_location: string | null;
+  alarm_notes: string | null;
+  bin_day: string | null;
+  gate_notes: string | null;
+  wifi: string | null;
+  garage_code: string | null;
+  extras: string | null;
+  updated_at: string;
+};
+
+export type Pet = {
+  id: string;
+  owner_id: string;
+  client_id: string;
+  name: string;
+  species: string;
+  breed: string | null;
+  birthday: string | null;
+  microchip: string | null;
+  vet_name: string | null;
+  vaccinated_until: string | null;
+  weight_kg: number | null;
+  favourite_treats: string | null;
+  behaviour: string | null;
+  commands: string | null;
+  medication: string | null;
+  feeding: string | null;
+  house_access: string | null;
+  lead_location: string | null;
+  preferred_route: string | null;
+  known_dogs: string | null;
+  can_off_leash: boolean;
+  swims: boolean;
+  photo_url: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Booking = {
+  id: string;
+  owner_id: string;
+  client_id: string;
+  pet_id: string;
+  starts_at: string;
+  service_type: ServiceType;
+  recurrence_rule: string | null;
+  series_id: string | null;
+  status: BookingStatus;
+  notes: string | null;
+  amount: number | null;
+  created_at: string;
+};
+
+export type Visit = {
+  id: string;
+  owner_id: string;
+  booking_id: string;
+  started_at: string;
+  finished_at: string | null;
+  notes: string | null;
+  status: VisitStatus;
+  created_at: string;
+};
+
+export type VisitChecklistItem = {
+  id: string;
+  visit_id: string;
+  label: string;
+  done: boolean;
+  sort_order: number;
+};
+
+export type VisitPhoto = {
+  id: string;
+  visit_id: string;
+  storage_path: string;
+  created_at: string;
+};
+
+export type Invoice = {
+  id: string;
+  owner_id: string;
+  client_id: string;
+  visit_id: string | null;
+  amount: number;
+  status: InvoiceStatus;
+  due_on: string | null;
+  paid_on: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type Reminder = {
+  id: string;
+  owner_id: string;
+  pet_id: string | null;
+  client_id: string | null;
+  title: string;
+  due_on: string;
+  kind: string;
+  done: boolean;
+  created_at: string;
+};
+
+export type BookingWithRelations = Booking & {
+  client: Pick<Client, "id" | "name" | "suburb" | "address"> | null;
+  pet: Pick<Pet, "id" | "name" | "photo_url" | "species"> | null;
+  visit: Pick<Visit, "id" | "status" | "started_at" | "finished_at"> | null;
+};
+
+export const SERVICE_LABELS: Record<ServiceType, string> = {
+  dog_walk: "Dog Walk",
+  pet_visit: "Pet Visit",
+  pet_feeding: "Feeding & Cuddles",
+  pet_minding: "Pet Minding",
+  other: "Other",
+};
+
+export const DEFAULT_CHECKLIST = [
+  "Water",
+  "Feed",
+  "Medication",
+  "Toilet",
+  "Walk",
+  "Lock house",
+] as const;
