@@ -3,6 +3,7 @@ export type ServiceType =
   | "pet_visit"
   | "pet_feeding"
   | "pet_minding"
+  | "meet_greet"
   | "other";
 
 export type BookingStatus = "scheduled" | "cancelled" | "completed";
@@ -149,6 +150,7 @@ export const SERVICE_LABELS: Record<ServiceType, string> = {
   pet_visit: "Pet Visit",
   pet_feeding: "Feeding & Cuddles",
   pet_minding: "Pet Minding",
+  meet_greet: "Meet & Greet",
   other: "Other",
 };
 
@@ -258,7 +260,13 @@ export const MOOD_OPTIONS: { value: PawMood; label: string; emoji: string }[] = 
   { value: "energetic", label: "Full of energy", emoji: "⚡" },
 ];
 
-export type EnquiryStatus = "new" | "contacted" | "converted" | "closed";
+export type EnquiryStatus =
+  | "new"
+  | "contacted"
+  | "meet_greet"
+  | "booked"
+  | "converted"
+  | "closed";
 
 export type WebsiteEnquiry = {
   id: string;

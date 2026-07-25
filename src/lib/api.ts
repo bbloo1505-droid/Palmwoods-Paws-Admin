@@ -816,3 +816,152 @@ export async function updateWebsiteEnquiryStatus(
   if (error) throw error;
   return data as WebsiteEnquiry;
 }
+
+export async function patchWebsiteEnquiry(
+  id: string,
+  patch: Partial<Pick<WebsiteEnquiry, "client_id" | "status">>,
+) {
+  const { data, error } = await supabase
+    .from("website_enquiries")
+    .update({ ...patch, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as WebsiteEnquiry;
+}
+
+function parsePetFromEnquiry(enquiry: WebsiteEnquiry) {
+  const details = (enquiry.pet_details || "").trim();
+  const typeRaw = (enquiry.pet_type || "").trim();
+  const typeLower = typeRaw.toLowerCase();
+  const species = typeLower.includes("cat")
+    ? "Cat"
+    : typeLower.includes("dog") || !typeRaw
+      ? "Dog"
+      : typeRaw;
+
+  let name = "";
+  let breed: string | null = null;
+  const parts = details
+    .split(/[,\n·|]/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (parts[0]) {
+    const first = parts[0].replace(/^name[:\s]+/i, "").trim();
+    if (first && first.length <= 40) name = first;
+  }
+  if (parts[1] && parts[1].length <= 60) breed = parts[1];
+
+  if (!name) {
+    const ownerFirst = enquiry.name.split(/\s+/)[0] || "Client";
+    name = `${ownerFirst}'s ${species.toLowerCase()}`;
+  }
+
+  return {
+    name,
+    species,
+    breed,
+    notes: [
+      details || null,
+      enquiry.message ? `Enquiry message: ${enquiry.message}` : null,
+      enquiry.preferred_dates ? `Preferred dates: ${enquiry.preferred_dates}` : null,
+      enquiry.meet_greet ? "Requested a chat about needs first" : null,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  };
+}
+
+/** Create/update client + pet from enquiry without changing enquiry status. */
+export async function ensureEnquiryHousehold(ownerId: string, enquiry: WebsiteEnquiry) {
+  const history = [
+    `Website enquiry ${new Date(enquiry.created_at).toLocaleDateString("en-AU")}`,
+    enquiry.service_needed ? `Service interest: ${enquiry.service_needed}` : null,
+    enquiry.preferred_dates ? `Preferred: ${enquiry.preferred_dates}` : null,
+    enquiry.message ? `Message: ${enquiry.message}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const client = enquiry.client_id
+    ? await upsertClient(
+        ownerId,
+        {
+          name: enquiry.name,
+          email: enquiry.email,
+          phone: enquiry.phone,
+          suburb: enquiry.suburb,
+          notes: history,
+        },
+        enquiry.client_id,
+      )
+    : await upsertClient(ownerId, {
+        name: enquiry.name,
+        email: enquiry.email,
+        phone: enquiry.phone,
+        suburb: enquiry.suburb,
+        notes: history,
+      });
+
+  const petInfo = parsePetFromEnquiry(enquiry);
+  const existingPets = await listPets(client.id);
+  let pet = existingPets.find((p) => p.name.toLowerCase() === petInfo.name.toLowerCase());
+  if (!pet) {
+    pet = await upsertPet(ownerId, {
+      client_id: client.id,
+      name: petInfo.name,
+      species: petInfo.species,
+      breed: petInfo.breed,
+      notes: petInfo.notes,
+      behaviour: enquiry.pet_details || null,
+    });
+  }
+
+  if (!enquiry.client_id) {
+    await patchWebsiteEnquiry(enquiry.id, { client_id: client.id });
+  }
+
+  return { client, pet };
+}
+
+/** Accept as client: household + mark converted. */
+export async function convertEnquiryToHousehold(ownerId: string, enquiry: WebsiteEnquiry) {
+  const { client, pet } = await ensureEnquiryHousehold(ownerId, enquiry);
+  const enquiryUpdated = await updateWebsiteEnquiryStatus(enquiry.id, "converted", {
+    client_id: client.id,
+  });
+  return { client, pet, enquiry: enquiryUpdated };
+}
+
+/** Ensure household exists, book Meet & Greet, mark enquiry meet_greet. */
+export async function scheduleMeetGreetFromEnquiry(
+  ownerId: string,
+  enquiry: WebsiteEnquiry,
+  startsAt: string,
+) {
+  const { client, pet } = await ensureEnquiryHousehold(ownerId, enquiry);
+
+  const bookings = await createBooking(ownerId, {
+    client_id: client.id,
+    pet_id: pet.id,
+    starts_at: startsAt,
+    service_type: "meet_greet",
+    notes: [
+      "Meet & Greet from website enquiry",
+      enquiry.service_needed ? `Interested in: ${enquiry.service_needed}` : null,
+      enquiry.message || null,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+    amount: 0,
+    weeks: 1,
+  });
+
+  const updated = await updateWebsiteEnquiryStatus(enquiry.id, "meet_greet", {
+    client_id: client.id,
+  });
+
+  return { client, pet, booking: bookings[0], enquiry: updated };
+}
