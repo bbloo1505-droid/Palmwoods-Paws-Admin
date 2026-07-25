@@ -105,7 +105,6 @@ export function AppShell({ children }: { children: ReactNode }) {
               label={item.label}
               icon={item.icon}
               active={isActive(item.to)}
-              soon={"soon" in item && item.soon}
             />
           ))}
         </nav>
@@ -155,7 +154,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   label={item.label}
                   icon={item.icon}
                   active={isActive(item.to)}
-                  soon={"soon" in item && item.soon}
                   onClick={() => setDrawerOpen(false)}
                 />
               ))}

@@ -4,7 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/auth";
 
 function RootComponent() {
-  const { loading, authDisabled } = useAuth();
+  const { loading, authDisabled, user } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isLogin = pathname === "/login";
@@ -14,8 +14,12 @@ function RootComponent() {
   useEffect(() => {
     if (authDisabled && isLogin) {
       navigate({ to: "/" });
+      return;
     }
-  }, [authDisabled, isLogin, navigate]);
+    if (!authDisabled && !loading && !user && !isLogin && !isPublicCustomer) {
+      navigate({ to: "/login" });
+    }
+  }, [authDisabled, loading, user, isLogin, isPublicCustomer, navigate]);
 
   if (loading) {
     return (
@@ -27,6 +31,14 @@ function RootComponent() {
 
   if (isPublicCustomer || (isLogin && !authDisabled)) {
     return <Outlet />;
+  }
+
+  if (!authDisabled && !user) {
+    return (
+      <div className="grid min-h-dvh place-items-center bg-cream text-muted">
+        Redirecting to login…
+      </div>
+    );
   }
 
   return (

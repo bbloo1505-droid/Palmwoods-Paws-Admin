@@ -1,4 +1,15 @@
-import { addWeeks, endOfDay, endOfWeek, format, startOfDay, startOfWeek } from "date-fns";
+import {
+  addDays,
+  addWeeks,
+  endOfDay,
+  endOfWeek,
+  format,
+  setHours,
+  setMinutes,
+  setSeconds,
+  startOfDay,
+  startOfWeek,
+} from "date-fns";
 import { supabase } from "@/lib/supabase";
 import {
   DEFAULT_CHECKLIST,
@@ -193,6 +204,95 @@ export async function createBooking(
   const { data, error } = await supabase.from("bookings").insert(rows).select("*");
   if (error) throw error;
   return (data ?? []) as Booking[];
+}
+
+/**
+ * Recurring weekly bookings on selected weekdays.
+ * weekdays: 1 = Monday … 7 = Sunday (ISO-style).
+ */
+export async function createRecurringBookings(
+  ownerId: string,
+  input: {
+    client_id: string;
+    pet_id: string;
+    service_type: ServiceType;
+    notes?: string;
+    amount?: number | null;
+    /** HH:mm */
+    time: string;
+    /** 1=Mon … 7=Sun */
+    weekdays: number[];
+    /** First day of the first week window */
+    startFrom: string;
+    weeks: number;
+  },
+) {
+  const weeks = Math.max(1, Math.min(52, input.weeks));
+  const weekdays = [...new Set(input.weekdays)]
+    .filter((d) => d >= 1 && d <= 7)
+    .sort((a, b) => a - b);
+  if (weekdays.length === 0) throw new Error("Pick at least one weekday.");
+
+  const [hhRaw, mmRaw] = input.time.split(":");
+  const hh = Number(hhRaw);
+  const mm = Number(mmRaw);
+  if (!Number.isFinite(hh) || !Number.isFinite(mm)) {
+    throw new Error("Pick a valid time.");
+  }
+
+  const startFrom = startOfDay(new Date(input.startFrom));
+  const seriesId = crypto.randomUUID();
+  const rows: {
+    owner_id: string;
+    client_id: string;
+    pet_id: string;
+    starts_at: string;
+    service_type: ServiceType;
+    notes: string | null;
+    amount: number | null;
+    recurrence_rule: string;
+    series_id: string;
+    status: "scheduled";
+  }[] = [];
+
+  for (let w = 0; w < weeks; w++) {
+    const weekStart = startOfWeek(addWeeks(startFrom, w), { weekStartsOn: 1 });
+    for (const weekday of weekdays) {
+      const day = addDays(weekStart, weekday - 1);
+      if (day < startFrom) continue;
+      const starts = setSeconds(setMinutes(setHours(day, hh), mm), 0);
+      rows.push({
+        owner_id: ownerId,
+        client_id: input.client_id,
+        pet_id: input.pet_id,
+        starts_at: starts.toISOString(),
+        service_type: input.service_type,
+        notes: input.notes ?? null,
+        amount: input.amount ?? null,
+        recurrence_rule: `WEEKLY:${weekdays.join(",")}`,
+        series_id: seriesId,
+        status: "scheduled",
+      });
+    }
+  }
+
+  if (rows.length === 0) {
+    throw new Error("No dates matched. Try a different start date or weekdays.");
+  }
+
+  const { data, error } = await supabase.from("bookings").insert(rows).select("*");
+  if (error) throw error;
+  return (data ?? []) as Booking[];
+}
+
+export async function cancelBookingSeries(seriesId: string) {
+  const { error } = await supabase
+    .from("bookings")
+    .update({ status: "cancelled" })
+    .eq("series_id", seriesId)
+    .eq("status", "scheduled")
+    .gte("starts_at", new Date().toISOString());
+  if (error) throw error;
 }
 
 export async function updateBooking(id: string, patch: Partial<Booking>) {
