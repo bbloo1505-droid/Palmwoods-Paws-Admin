@@ -14,8 +14,8 @@ function ReportsPage() {
       />
       <Card className="space-y-3">
         <p className="text-muted">
-          Start a walk from a pet profile, finish it, then send a Paw Report. Owners get a private
-          link to a branded page with route, stats, photos and video.
+          Start a walk, add photos or a short video, finish, then send the Paw Report. Owners get a
+          private link with Anna&apos;s update, mood, and media.
         </p>
         <p>
           <SoftLink to="/pets">Open pets →</SoftLink>

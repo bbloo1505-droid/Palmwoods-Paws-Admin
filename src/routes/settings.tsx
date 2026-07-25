@@ -112,13 +112,14 @@ function SettingsPage() {
           {walksOk === null
             ? "Checking…"
             : walksOk
-              ? "Enabled"
+              ? "Enabled — Start Walk → photos/video → Paw Report"
               : "Not enabled yet (Start Walk will use a visit checklist until this is on)"}
         </p>
         {!walksOk ? (
           <>
             <p className="text-muted">
-              One paste in Supabase unlocks GPS walks, Finish Walk, and owner Paw Reports.
+              One paste in Supabase unlocks Finish Walk and owner Paw Reports (photos, video, mood,
+              notes). No GPS required.
             </p>
             <ol className="list-decimal space-y-1 pl-5 text-olive-950">
               <li>
@@ -140,7 +141,7 @@ function SettingsPage() {
             </Button>
           </>
         ) : (
-          <p className="text-success">Walk tracking and Paw Reports are ready.</p>
+          <p className="text-success">Paw Reports are ready.</p>
         )}
         {sqlMsg ? <p className="text-success">{sqlMsg}</p> : null}
         {sqlErr ? <p className="text-danger">{sqlErr}</p> : null}

@@ -178,9 +178,13 @@ function PawReportComposePage() {
     <div className="mx-auto max-w-xl space-y-4">
       <PageHeader
         title={`${walk.pet?.name ?? "Walk"}'s Walk`}
-        subtitle={`${formatDuration(walk.duration_sec)} · ${formatDistanceKm(walk.distance_m)} · ${
-          walk.suburb || walk.client?.suburb || "Palmwoods"
-        }`}
+        subtitle={[
+          formatDuration(walk.duration_sec),
+          Number(walk.distance_m) > 0 ? formatDistanceKm(walk.distance_m) : null,
+          walk.suburb || walk.client?.suburb || "Palmwoods",
+        ]
+          .filter(Boolean)
+          .join(" · ")}
       />
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}

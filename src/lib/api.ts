@@ -33,7 +33,7 @@ import {
   type WebsiteEnquiry,
   type EnquiryStatus,
 } from "@/lib/types";
-import { haversineMetres, makePublicToken, polishPawReportCopy } from "@/lib/utils";
+import { makePublicToken, polishPawReportCopy } from "@/lib/utils";
 
 function isMissingRelation(error: { message?: string; code?: string } | null | undefined) {
   if (!error) return false;
@@ -631,7 +631,7 @@ export async function listActiveWalksByBookingIds(bookingIds: string[]) {
   return (data ?? []) as Pick<Walk, "id" | "booking_id" | "status" | "pet_id">[];
 }
 
-/** Start the right job type from a booking: walk (GPS + Paw Report) or visit. */
+/** Start the right job type from a booking: walk (Paw Report) or visit. */
 export async function startJobFromBooking(ownerId: string, bookingId: string) {
   const booking = await getBooking(bookingId);
 
@@ -711,17 +711,15 @@ export async function listWalkPoints(walkId: string) {
     .select("*")
     .eq("walk_id", walkId)
     .order("recorded_at", { ascending: true });
-  if (error) throw error;
+  if (error) {
+    if (isMissingRelation(error)) return [] as WalkTrackPoint[];
+    throw error;
+  }
   return (data ?? []) as WalkTrackPoint[];
 }
 
 export async function finishWalk(walkId: string) {
-  const points = await listWalkPoints(walkId);
-  let distance = 0;
-  for (let i = 1; i < points.length; i++) {
-    distance += haversineMetres(points[i - 1], points[i]);
-  }
-
+  // Duration from start/finish clock only (no GPS distance).
   const walk = await getWalk(walkId);
   const started = new Date(walk.started_at).getTime();
   const finished = Date.now();
@@ -732,13 +730,20 @@ export async function finishWalk(walkId: string) {
     .update({
       status: "completed",
       finished_at: new Date(finished).toISOString(),
-      distance_m: Math.round(distance * 10) / 10,
+      distance_m: 0,
       duration_sec: durationSec,
     })
     .eq("id", walkId)
     .select("*")
     .single();
   if (error) throw error;
+
+  // Keep draft Paw Report stats in sync (report is often created mid-walk).
+  await supabase
+    .from("paw_reports")
+    .update({ distance_m: 0, duration_sec: durationSec })
+    .eq("walk_id", walkId);
+
   return data as Walk;
 }
 
@@ -780,6 +785,8 @@ export async function updatePawReport(
     voice_note_raw: string | null;
     report_body: string | null;
     show_full_route: boolean;
+    distance_m: number;
+    duration_sec: number;
   }>,
 ) {
   const { data, error } = await supabase
@@ -795,22 +802,29 @@ export async function updatePawReport(
 export async function regeneratePawReportBody(reportId: string) {
   const { data: report, error } = await supabase
     .from("paw_reports")
-    .select("*, pet:pets(name)")
+    .select("*, pet:pets(name), walk:walks(distance_m, duration_sec)")
     .eq("id", reportId)
     .single();
   if (error) throw error;
   const petName = (report as { pet?: { name?: string } }).pet?.name ?? "Your dog";
+  const walk = (report as { walk?: { distance_m?: number; duration_sec?: number } | null }).walk;
+  const distanceM = Number(walk?.distance_m ?? report.distance_m ?? 0);
+  const durationSec = Number(walk?.duration_sec ?? report.duration_sec ?? 0);
   const body = polishPawReportCopy({
     petName,
     suburb: report.suburb,
-    distanceM: Number(report.distance_m),
-    durationSec: Number(report.duration_sec),
+    distanceM,
+    durationSec,
     mood: report.mood,
     toiletPoo: report.toilet_poo,
     toiletWee: report.toilet_wee,
     rawNote: report.voice_note_raw,
   });
-  return updatePawReport(reportId, { report_body: body });
+  return updatePawReport(reportId, {
+    report_body: body,
+    distance_m: distanceM,
+    duration_sec: durationSec,
+  });
 }
 
 export async function sendPawReport(reportId: string) {
@@ -941,7 +955,13 @@ export async function getPublicPawReport(token: string) {
 
 export async function getPublicWalkRoute(token: string) {
   const { data, error } = await supabase.rpc("get_public_walk_route", { p_token: token });
-  if (error) throw error;
+  if (error) {
+    // Route map is optional — walks no longer record GPS by default.
+    if (isMissingRelation(error) || /function|rpc|pgrst/i.test(error.message || "")) {
+      return [] as { lat: number; lng: number; recorded_at: string }[];
+    }
+    throw error;
+  }
   return (data ?? []) as { lat: number; lng: number; recorded_at: string }[];
 }
 
@@ -949,6 +969,7 @@ export async function listPetWalkStats(petId: string) {
   const empty = {
     adventureCount: 0,
     totalKm: 0,
+    totalDurationSec: 0,
     lastWalkAt: null as string | null,
     walks: [] as { id: string; distance_m: number; duration_sec: number; started_at: string; status: string }[],
   };
@@ -965,9 +986,11 @@ export async function listPetWalkStats(petId: string) {
   const walks = data ?? [];
   const adventureCount = walks.length;
   const totalKm = walks.reduce((sum, w) => sum + Number(w.distance_m || 0), 0) / 1000;
+  const totalDurationSec = walks.reduce((sum, w) => sum + Number(w.duration_sec || 0), 0);
   return {
     adventureCount,
     totalKm,
+    totalDurationSec,
     lastWalkAt: walks[0]?.started_at ?? null,
     walks,
   };

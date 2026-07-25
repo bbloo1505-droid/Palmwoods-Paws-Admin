@@ -79,8 +79,31 @@ function EnquiriesPage() {
     }
   };
 
+  const closeEnquiry = (enquiry: WebsiteEnquiry) => {
+    if (
+      !window.confirm(
+        `Close enquiry from ${enquiry.name}?\n\nThey’ll move to Done and leave the open list. You can still see them under Done.`,
+      )
+    ) {
+      return;
+    }
+    void setStatus(enquiry.id, "closed");
+  };
+
+  const markBooked = (enquiry: WebsiteEnquiry) => {
+    if (!window.confirm(`Mark ${enquiry.name} as booked?`)) return;
+    void setStatus(enquiry.id, "booked");
+  };
+
   const acceptClient = async (enquiry: WebsiteEnquiry) => {
     if (!ownerId) return;
+    if (
+      !window.confirm(
+        `Accept ${enquiry.name} as a client?\n\nThis creates their client record (and pet if details were provided) and opens their profile.`,
+      )
+    ) {
+      return;
+    }
     setBusyId(enquiry.id);
     setError(null);
     try {
@@ -100,6 +123,8 @@ function EnquiriesPage() {
 
   const bookMeetGreet = async (enquiry: WebsiteEnquiry) => {
     if (!ownerId || !meetAt) return;
+    const when = format(new Date(meetAt), "d MMM yyyy · h:mm a");
+    if (!window.confirm(`Add Meet & Greet for ${enquiry.name} on ${when}?`)) return;
     setBusyId(enquiry.id);
     setError(null);
     try {
@@ -156,10 +181,10 @@ function EnquiriesPage() {
                   setMeetAt("");
                 }}
                 onContacted={() => void setStatus(e.id, "contacted")}
-                onBooked={() => void setStatus(e.id, "booked")}
+                onBooked={() => markBooked(e)}
                 onAccept={() => void acceptClient(e)}
                 onScheduleMeet={() => void bookMeetGreet(e)}
-                onClose={() => void setStatus(e.id, "closed")}
+                onClose={() => closeEnquiry(e)}
               />
             ))}
           </div>

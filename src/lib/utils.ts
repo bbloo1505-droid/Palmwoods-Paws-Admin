@@ -81,7 +81,8 @@ export function polishPawReportCopy(input: {
   toiletWee?: boolean;
   rawNote?: string | null;
 }) {
-  const km = formatDistanceKm(input.distanceM);
+  const hasDistance = Number(input.distanceM) > 0;
+  const km = hasDistance ? formatDistanceKm(input.distanceM) : null;
   const mins = formatDuration(input.durationSec);
   const area = input.suburb?.trim() || "the Sunshine Coast";
   const moodKey = (input.mood as PawMood) || "happy";
@@ -90,14 +91,18 @@ export function polishPawReportCopy(input: {
 
   const story = note
     ? note.replace(/\s+/g, " ")
-    : `${input.petName} had a wonderful time exploring ${area}.`;
+    : `${input.petName} had a wonderful time out and about in ${area}.`;
+
+  const intro = hasDistance
+    ? `${input.petName} was ${moodPhrase} today! We covered ${km} around ${area}. ${story}`
+    : `${input.petName} was ${moodPhrase} today around ${area}. ${story}`;
 
   const lines = [
-    `${input.petName}'s Adventure`,
+    `${input.petName}'s Paw Report`,
     "",
-    `${input.petName} was ${moodPhrase} today! We covered ${km} around ${area}. ${story}`,
+    intro,
     "",
-    `${mins} adventure · ${km}`,
+    hasDistance ? `${mins} walk · ${km}` : `${mins} walk`,
   ];
 
   if (input.toiletPoo || input.toiletWee) {
@@ -106,6 +111,6 @@ export function polishPawReportCopy(input: {
     if (input.toiletWee) lines.push("Wee ✓");
   }
 
-  lines.push("", `See you next adventure, ${input.petName}!`);
+  lines.push("", `See you next walk, ${input.petName}!`);
   return lines.join("\n");
 }

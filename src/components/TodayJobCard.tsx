@@ -33,7 +33,7 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
   const inProgress = walkService ? walkInProgress : visitInProgress;
 
   const subtitle = walkService
-    ? `${SERVICE_LABELS[booking.service_type]} · Adventure`
+    ? `${SERVICE_LABELS[booking.service_type]} · Paw Report`
     : SERVICE_LABELS[booking.service_type];
 
   const onStart = async () => {

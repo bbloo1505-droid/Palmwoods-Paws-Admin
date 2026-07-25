@@ -1,20 +1,16 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { Button, Card, PageHeader } from "@/components/ui";
-import { RouteMap } from "@/components/RouteMap";
 import {
   finishWalk,
   getOrCreatePawReport,
   getWalk,
   listPawReportMedia,
-  listWalkPoints,
   updatePawReport,
   uploadPawReportMediaMany,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { useWalkGps } from "@/hooks/useWalkGps";
-import { cn, formatDistanceKm, formatDuration } from "@/lib/utils";
-import type { WalkTrackPoint } from "@/lib/types";
+import { cn, formatDuration } from "@/lib/utils";
 
 export const Route = createFileRoute("/walks/$walkId")({
   component: ActiveWalkPage,
@@ -28,7 +24,6 @@ function ActiveWalkPage() {
   const photoLibraryRef = useRef<HTMLInputElement>(null);
 
   const [walk, setWalk] = useState<Awaited<ReturnType<typeof getWalk>> | null>(null);
-  const [points, setPoints] = useState<WalkTrackPoint[]>([]);
   const [elapsed, setElapsed] = useState(0);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -43,7 +38,6 @@ function ActiveWalkPage() {
   const [videoCount, setVideoCount] = useState(0);
 
   const inProgress = walk?.status === "in_progress";
-  const gps = useWalkGps(walkId, Boolean(inProgress));
 
   useEffect(() => {
     getWalk(walkId)
@@ -58,10 +52,7 @@ function ActiveWalkPage() {
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load walk"));
-    listWalkPoints(walkId)
-      .then(setPoints)
-      .catch(() => undefined);
-  }, [walkId, gps.pointCount]);
+  }, [walkId]);
 
   useEffect(() => {
     if (!walk || walk.status !== "in_progress") return;
@@ -98,14 +89,12 @@ function ActiveWalkPage() {
     setBusy(true);
     setError(null);
     try {
-      if (note.trim() || toiletPoo || toiletWee) {
-        const id = await ensureReport();
-        await updatePawReport(id, {
-          toilet_poo: toiletPoo,
-          toilet_wee: toiletWee || water,
-          voice_note_raw: note.trim() || null,
-        });
-      }
+      const id = await ensureReport();
+      await updatePawReport(id, {
+        toilet_poo: toiletPoo,
+        toilet_wee: toiletWee || water,
+        voice_note_raw: note.trim() || null,
+      });
       await finishWalk(walkId);
       void navigate({ to: "/walks/$walkId/report", params: { walkId } });
     } catch (e) {
@@ -135,26 +124,6 @@ function ActiveWalkPage() {
 
   if (!walk && !error) return <p className="text-muted">Starting walk…</p>;
   if (!walk) return <p className="text-danger">{error}</p>;
-
-  const liveDistance = (() => {
-    if (walk.status === "completed") return Number(walk.distance_m);
-    let d = 0;
-    for (let i = 1; i < points.length; i++) {
-      const a = points[i - 1];
-      const b = points[i];
-      const R = 6371000;
-      const toRad = (x: number) => (x * Math.PI) / 180;
-      const dLat = toRad(b.lat - a.lat);
-      const dLng = toRad(b.lng - a.lng);
-      const lat1 = toRad(a.lat);
-      const lat2 = toRad(b.lat);
-      const h =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
-      d += 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
-    }
-    return d;
-  })();
 
   const actions = [
     {
@@ -218,19 +187,19 @@ function ActiveWalkPage() {
     <div className="mx-auto max-w-xl space-y-4 pb-8">
       <PageHeader
         title={`${walk.pet?.name ?? "Walk"}'s walk`}
-        subtitle={walk.suburb || walk.client?.suburb || "Tracking in progress"}
+        subtitle={
+          inProgress
+            ? "Add photos or a clip, then finish for the Paw Report"
+            : walk.suburb || walk.client?.suburb || "Walk complete"
+        }
       />
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 gap-3">
         <Card className="text-center">
           <p className="text-xs uppercase tracking-wide text-muted">Time</p>
           <p className="font-display text-2xl text-olive-950">
             {formatDuration(walk.status === "completed" ? walk.duration_sec : elapsed)}
           </p>
-        </Card>
-        <Card className="text-center">
-          <p className="text-xs uppercase tracking-wide text-muted">Distance</p>
-          <p className="font-display text-2xl text-olive-950">{formatDistanceKm(liveDistance)}</p>
         </Card>
         <Card className="text-center">
           <p className="text-xs uppercase tracking-wide text-muted">Media</p>
@@ -305,26 +274,16 @@ function ActiveWalkPage() {
         onChange={(e) => void onMedia(e.target.files, "video")}
       />
 
-      <RouteMap points={points} className="min-h-40" />
-
-      {gps.status === "denied" ? (
-        <p className="text-sm text-danger">
-          Location permission denied. Enable GPS for this site to record the route.
-        </p>
-      ) : null}
-      {gps.status === "watching" ? (
-        <p className="text-sm text-muted">GPS tracking while this screen stays open.</p>
-      ) : null}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       {inProgress ? (
         <Button className="w-full min-h-14" size="lg" variant="gold" disabled={busy} onClick={() => void onFinish()}>
-          {busy ? "Finishing…" : "Finish Walk"}
+          {busy ? "Opening Paw Report…" : "Finish Walk · Paw Report"}
         </Button>
       ) : (
         <Link to="/walks/$walkId/report" params={{ walkId }}>
           <Button className="w-full min-h-14" size="lg" variant="gold">
-            Generate Paw Report
+            Open Paw Report
           </Button>
         </Link>
       )}

@@ -65,7 +65,7 @@ function MyPawsPortalPage() {
       <main className="mx-auto max-w-lg px-4 py-6">
         <PageHeader
           title={client ? `Hi ${client.name.split(" ")[0]}` : "My Paws"}
-          subtitle="Adventure history for your pets. Magic-link login coming next."
+          subtitle="Walk history for your pets. Magic-link login coming next."
         />
 
         {error ? <p className="mb-3 text-sm text-danger">{error}</p> : null}
@@ -96,7 +96,7 @@ function MyPawsPortalPage() {
           />
         ) : (
           <div className="space-y-3">
-            <h2 className="font-display text-xl text-olive-950">Adventure history</h2>
+            <h2 className="font-display text-xl text-olive-950">Walk history</h2>
             {reports.map((r) => (
               <Link key={r.id} to="/pawreport/$token" params={{ token: r.public_token }}>
                 <Card className="flex items-center gap-3 transition hover:border-olive-700/30">
@@ -111,7 +111,12 @@ function MyPawsPortalPage() {
                     <p className="font-semibold text-olive-950">{r.pet?.name ?? "Pet"}</p>
                     <p className="text-sm text-muted">
                       {r.sent_at ? format(new Date(r.sent_at), "d MMM yyyy") : "Sent"} ·{" "}
-                      {formatDuration(r.duration_sec)} · {formatDistanceKm(r.distance_m)}
+                      {[
+                        formatDuration(r.duration_sec),
+                        Number(r.distance_m) > 0 ? formatDistanceKm(r.distance_m) : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                     </p>
                   </div>
                   <span className="text-sm font-semibold text-olive-800">View</span>

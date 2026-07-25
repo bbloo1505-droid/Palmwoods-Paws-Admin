@@ -154,7 +154,7 @@ export const SERVICE_LABELS: Record<ServiceType, string> = {
   other: "Other",
 };
 
-/** Dog walks use GPS + Paw Report. Other services use the visit checklist flow. */
+/** Dog walks use the Paw Report flow. Other services use the visit checklist flow. */
 export function isWalkService(service: ServiceType) {
   return service === "dog_walk";
 }

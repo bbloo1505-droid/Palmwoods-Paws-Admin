@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import type { Client, Pet } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { format } from "date-fns";
+import { formatDuration } from "@/lib/utils";
 
 export const Route = createFileRoute("/pets/$petId")({
   component: PetDetailPage,
@@ -38,7 +39,7 @@ function PetDetailPage() {
           const s = await listPetWalkStats(p.id);
           setStats(s);
         } catch {
-          setStats({ adventureCount: 0, totalKm: 0, lastWalkAt: null, walks: [] });
+          setStats({ adventureCount: 0, totalKm: 0, totalDurationSec: 0, lastWalkAt: null, walks: [] });
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load pet"));
@@ -120,11 +121,13 @@ function PetDetailPage() {
         <Card className="grid grid-cols-3 gap-3 text-center">
           <div>
             <p className="font-display text-2xl text-olive-950">{stats.adventureCount}</p>
-            <p className="text-xs text-muted">Adventures</p>
+            <p className="text-xs text-muted">Walks</p>
           </div>
           <div>
-            <p className="font-display text-2xl text-olive-950">{stats.totalKm.toFixed(1)}</p>
-            <p className="text-xs text-muted">km explored</p>
+            <p className="font-display text-2xl text-olive-950">
+              {formatDuration(stats.totalDurationSec)}
+            </p>
+            <p className="text-xs text-muted">time walked</p>
           </div>
           <div>
             <p className="font-display text-lg text-olive-950">

@@ -1,4 +1,4 @@
--- Paw Reports + Walk GPS tracking (customer-facing layer)
+-- Paw Reports + Walks (customer-facing layer; GPS tables optional / unused for now)
 -- Run after init + optional dev_open_access migrations.
 
 create table if not exists public.walks (

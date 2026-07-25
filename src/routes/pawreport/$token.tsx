@@ -19,6 +19,42 @@ export const Route = createFileRoute("/pawreport/$token")({
 
 type MediaItem = { kind: string; url: string; id: string };
 
+const PREVIEW_PHOTOS = [
+  "https://images.unsplash.com/photo-1552053831-71594a27632d?auto=format&fit=crop&w=1200&q=80",
+  "https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=900&q=80",
+  "https://images.unsplash.com/photo-1518717758536-85ae29035b6d?auto=format&fit=crop&w=900&q=80",
+];
+
+function previewPawReport(): { report: PublicPawReport; media: MediaItem[] } {
+  const now = new Date().toISOString();
+  return {
+    report: {
+      id: "preview",
+      public_token: "preview",
+      mood: "happy",
+      toilet_poo: true,
+      toilet_wee: true,
+      report_body:
+        "Luna was happy today around Palmwoods. She had a wonderful time sniffing the paths near the creek, said hello to a couple of friendly pups, and finished with a good stretch in the sun. See you next walk, Luna!",
+      suburb: "Palmwoods",
+      distance_m: 0,
+      duration_sec: 32 * 60,
+      show_full_route: false,
+      sent_at: now,
+      created_at: now,
+      pet_name: "Luna",
+      pet_species: "dog",
+      pet_photo_url: PREVIEW_PHOTOS[0],
+      client_name: "Sophie",
+    },
+    media: PREVIEW_PHOTOS.map((url, i) => ({
+      id: `preview-photo-${i}`,
+      kind: "photo",
+      url,
+    })),
+  };
+}
+
 function PublicPawReportPage() {
   const { token } = Route.useParams();
   const [report, setReport] = useState<PublicPawReport | null>(null);
@@ -30,6 +66,14 @@ function PublicPawReportPage() {
   useEffect(() => {
     (async () => {
       try {
+        if (token === "preview") {
+          const demo = previewPawReport();
+          setReport(demo.report);
+          setMedia(demo.media);
+          setRoute([]);
+          document.title = "Luna's Paw Report · Preview · Palmwoods Paws";
+          return;
+        }
         const r = await getPublicPawReport(token);
         if (!r) {
           setError("This Paw Report link isn't available.");
@@ -74,7 +118,7 @@ function PublicPawReportPage() {
       <div className="grid min-h-dvh place-items-center bg-[#f3efe6] px-4">
         <div className="pp-fade-up text-center">
           <img src={LOGO_SRC} alt="Palmwoods Paws" className="mx-auto h-12 w-auto object-contain opacity-80" />
-          <p className="mt-4 text-sm text-muted">Opening today&apos;s adventure…</p>
+          <p className="mt-4 text-sm text-muted">Opening today&apos;s Paw Report…</p>
         </div>
       </div>
     );
@@ -82,6 +126,11 @@ function PublicPawReportPage() {
 
   return (
     <>
+      {token === "preview" ? (
+        <div className="sticky top-0 z-40 bg-olive-950 px-4 py-2 text-center text-xs font-semibold tracking-wide text-gold">
+          Preview only · sample photos &amp; copy · real owner links look the same
+        </div>
+      ) : null}
       <PawReportView
         report={report}
         route={route}
@@ -191,15 +240,13 @@ function PawReportView({
                 {report.pet_name}&apos;s adventure
               </h1>
               <p className="mt-3 text-base text-warm-white/85 sm:text-lg">
-                {formatDuration(report.duration_sec)}
-                <span className="mx-2 text-gold/80">·</span>
-                {formatDistanceKm(report.distance_m)}
-                {report.suburb ? (
-                  <>
-                    <span className="mx-2 text-gold/80">·</span>
-                    {report.suburb}
-                  </>
-                ) : null}
+                {[
+                  formatDuration(report.duration_sec),
+                  Number(report.distance_m) > 0 ? formatDistanceKm(report.distance_m) : null,
+                  report.suburb || null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </p>
             </div>
           </div>
@@ -251,7 +298,7 @@ function PawReportView({
               From Anna
             </p>
             <blockquote className="mt-3 border-l-[3px] border-gold pl-5">
-              <p className="font-display text-[1.45rem] leading-relaxed text-olive-950 sm:text-[1.65rem]">
+              <p className="whitespace-pre-wrap text-base leading-relaxed text-olive-950 sm:text-lg">
                 {report.report_body}
               </p>
             </blockquote>

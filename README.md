@@ -43,12 +43,12 @@ Open http://localhost:5173
 - Pet profiles
 - Calendar with weekly recurring bookings
 - Visit flow: start → checklist → notes → photos → finish → invoice
+- Walk flow: start → photos/video → finish → Paw Report to owner
 - Invoice tracking (owed / paid)
 
 ## Version 2 (later)
 
-- GPS walk tracking
-- Automatic owner reports
+- Optional GPS walk tracking
 - Invoice emailing
 - Online booking requests
 - Reminder SMS/email
