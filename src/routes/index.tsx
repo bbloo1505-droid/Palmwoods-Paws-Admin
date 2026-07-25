@@ -4,6 +4,7 @@ import { Cake, CalendarDays, MessageSquare, Pill, Plus, Syringe } from "lucide-r
 import { ScheduleCard } from "@/components/ScheduleCard";
 import { Button, Card, EmptyState, PageHeader, SoftLink, StatCard } from "@/components/ui";
 import {
+  countNewWebsiteEnquiries,
   getDashboardStats,
   listRecentVisits,
   listReminders,
@@ -27,6 +28,7 @@ function DashboardPage() {
     outstanding: 0,
     unpaidCount: 0,
   });
+  const [newEnquiries, setNewEnquiries] = useState(0);
   const [reminders, setReminders] = useState<
     Awaited<ReturnType<typeof listReminders>>
   >([]);
@@ -38,15 +40,17 @@ function DashboardPage() {
     let alive = true;
     (async () => {
       try {
-        const [j, s, r, v] = await Promise.all([
+        const [j, s, r, v, enquiryCount] = await Promise.all([
           listTodaysBookings(),
           getDashboardStats(),
           listReminders(),
           listRecentVisits(),
+          countNewWebsiteEnquiries().catch(() => 0),
         ]);
         if (!alive) return;
         setJobs(j);
         setStats(s);
+        setNewEnquiries(enquiryCount);
         setReminders(r);
         setRecent(v);
       } catch (e) {
@@ -122,13 +126,15 @@ function DashboardPage() {
               hint={`${stats.unpaidCount} unpaid`}
               tone="danger"
             />
-            <StatCard
-              label="Messages"
-              value="0"
-              hint="Coming in V2"
-              tone="info"
-              icon={<MessageSquare className="h-5 w-5 text-info" />}
-            />
+            <Link to="/messages">
+              <StatCard
+                label="Enquiries"
+                value={String(newEnquiries)}
+                hint="New from website"
+                tone="info"
+                icon={<MessageSquare className="h-5 w-5 text-info" />}
+              />
+            </Link>
           </div>
 
           <Card>

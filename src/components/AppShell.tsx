@@ -7,7 +7,6 @@ import {
   Menu,
   MessageSquare,
   MoreHorizontal,
-  PawPrint,
   Settings,
   Users,
   ClipboardList,
@@ -17,6 +16,7 @@ import {
 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { useAuth } from "@/lib/auth";
+import { LOGO_SRC } from "@/lib/brand";
 import { cn } from "@/lib/utils";
 
 const desktopNav = [
@@ -26,8 +26,8 @@ const desktopNav = [
   { to: "/pets", label: "Pets", icon: Dog },
   { to: "/visits", label: "Visits", icon: ClipboardList },
   { to: "/invoices", label: "Invoices", icon: FileText },
-  { to: "/messages", label: "Messages", icon: MessageSquare, soon: true },
-  { to: "/reports", label: "Reports", icon: Bell, soon: true },
+  { to: "/messages", label: "Enquiries", icon: MessageSquare },
+  { to: "/my-paws", label: "My Paws", icon: Bell },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
@@ -73,7 +73,7 @@ function NavItem({
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { profile, user, signOut } = useAuth();
+  const { profile, user, signOut, authDisabled } = useAuth();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -86,15 +86,16 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="min-h-dvh bg-cream md:flex">
       <aside className="hidden w-64 shrink-0 flex-col bg-olive-800 text-warm-white md:flex">
         <div className="border-b border-white/10 px-5 py-5">
-          <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-xl bg-gold text-olive-950">
-              <PawPrint className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="font-display text-lg leading-tight">Palmwoods Paws</p>
-              <p className="text-[11px] uppercase tracking-[0.14em] text-gold">Dog walking & pet minding</p>
-            </div>
-          </div>
+          <Link to="/" className="block">
+            <img
+              src={LOGO_SRC}
+              alt="Palmwoods Paws"
+              className="h-14 w-auto max-w-full object-contain object-left"
+            />
+          </Link>
+          <p className="mt-2 text-[11px] uppercase tracking-[0.14em] text-gold">
+            Dog walking &amp; pet minding
+          </p>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto p-3">
           {desktopNav.map((item) => (
@@ -112,16 +113,22 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="mb-3">
             <p className="font-semibold">{profile?.full_name || "Anna"}</p>
             <p className="text-xs text-olive-100/70">Palmwoods, QLD</p>
-            <p className="truncate text-xs text-olive-100/60">{user?.email}</p>
+            {authDisabled ? (
+              <p className="text-xs text-gold/80">Auth off (dev)</p>
+            ) : (
+              <p className="truncate text-xs text-olive-100/60">{user?.email}</p>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => void signOut()}
-            className="inline-flex items-center gap-2 text-sm text-olive-100/80 hover:text-gold"
-          >
-            <LogOut className="h-4 w-4" />
-            Sign out
-          </button>
+          {!authDisabled ? (
+            <button
+              type="button"
+              onClick={() => void signOut()}
+              className="inline-flex items-center gap-2 text-sm text-olive-100/80 hover:text-gold"
+            >
+              <LogOut className="h-4 w-4" />
+              Sign out
+            </button>
+          ) : null}
         </div>
       </aside>
 
@@ -162,10 +169,13 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" onClick={() => setDrawerOpen(true)} aria-label="Open menu">
             <Menu className="h-6 w-6 text-olive-900" />
           </button>
-          <div className="flex items-center gap-2">
-            <PawPrint className="h-5 w-5 text-gold-dark" />
-            <span className="font-display text-lg text-olive-950">Palmwoods Paws</span>
-          </div>
+          <Link to="/" className="flex items-center justify-center">
+            <img
+              src={LOGO_SRC}
+              alt="Palmwoods Paws"
+              className="h-10 w-auto max-w-[160px] object-contain"
+            />
+          </Link>
           <Link to="/invoices" aria-label="Invoices">
             <Bell className="h-5 w-5 text-olive-800" />
           </Link>

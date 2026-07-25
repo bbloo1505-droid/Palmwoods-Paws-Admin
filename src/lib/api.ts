@@ -7,13 +7,22 @@ import {
   type Client,
   type HouseInfo,
   type Invoice,
+  type PawMood,
+  type PawReport,
+  type PawReportMedia,
   type Pet,
+  type PublicPawReport,
   type Reminder,
   type ServiceType,
   type Visit,
   type VisitChecklistItem,
   type VisitPhoto,
+  type Walk,
+  type WalkTrackPoint,
+  type WebsiteEnquiry,
+  type EnquiryStatus,
 } from "@/lib/types";
+import { haversineMetres, makePublicToken, polishPawReportCopy } from "@/lib/utils";
 
 export async function listClients() {
   const { data, error } = await supabase
@@ -445,4 +454,311 @@ export async function listRecentVisits(limit = 5) {
     .limit(limit);
   if (error) throw error;
   return data ?? [];
+}
+
+export async function startWalk(
+  ownerId: string,
+  input: { pet_id: string; client_id: string; suburb?: string | null; booking_id?: string | null },
+) {
+  const { data, error } = await supabase
+    .from("walks")
+    .insert({
+      owner_id: ownerId,
+      pet_id: input.pet_id,
+      client_id: input.client_id,
+      booking_id: input.booking_id ?? null,
+      suburb: input.suburb ?? null,
+      status: "in_progress",
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as Walk;
+}
+
+export async function getWalk(id: string) {
+  const { data, error } = await supabase
+    .from("walks")
+    .select(
+      `
+      *,
+      pet:pets(*),
+      client:clients(id, name, suburb, phone, email),
+      report:paw_reports(id, public_token, status)
+    `,
+    )
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return data as Walk & {
+    pet: Pet;
+    client: Pick<Client, "id" | "name" | "suburb" | "phone" | "email">;
+    report: Pick<PawReport, "id" | "public_token" | "status"> | Pick<PawReport, "id" | "public_token" | "status">[] | null;
+  };
+}
+
+export async function appendWalkPoint(
+  walkId: string,
+  point: { lat: number; lng: number; accuracy?: number | null },
+) {
+  const { data, error } = await supabase
+    .from("walk_track_points")
+    .insert({
+      walk_id: walkId,
+      lat: point.lat,
+      lng: point.lng,
+      accuracy: point.accuracy ?? null,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as WalkTrackPoint;
+}
+
+export async function listWalkPoints(walkId: string) {
+  const { data, error } = await supabase
+    .from("walk_track_points")
+    .select("*")
+    .eq("walk_id", walkId)
+    .order("recorded_at", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as WalkTrackPoint[];
+}
+
+export async function finishWalk(walkId: string) {
+  const points = await listWalkPoints(walkId);
+  let distance = 0;
+  for (let i = 1; i < points.length; i++) {
+    distance += haversineMetres(points[i - 1], points[i]);
+  }
+
+  const walk = await getWalk(walkId);
+  const started = new Date(walk.started_at).getTime();
+  const finished = Date.now();
+  const durationSec = Math.max(0, Math.round((finished - started) / 1000));
+
+  const { data, error } = await supabase
+    .from("walks")
+    .update({
+      status: "completed",
+      finished_at: new Date(finished).toISOString(),
+      distance_m: Math.round(distance * 10) / 10,
+      duration_sec: durationSec,
+    })
+    .eq("id", walkId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as Walk;
+}
+
+export async function getOrCreatePawReport(ownerId: string, walkId: string) {
+  const existing = await supabase
+    .from("paw_reports")
+    .select("*")
+    .eq("walk_id", walkId)
+    .maybeSingle();
+  if (existing.error) throw existing.error;
+  if (existing.data) return existing.data as PawReport;
+
+  const walk = await getWalk(walkId);
+  const { data, error } = await supabase
+    .from("paw_reports")
+    .insert({
+      walk_id: walkId,
+      owner_id: ownerId,
+      pet_id: walk.pet_id,
+      client_id: walk.client_id,
+      public_token: makePublicToken(6),
+      suburb: walk.suburb ?? walk.client?.suburb ?? null,
+      distance_m: walk.distance_m,
+      duration_sec: walk.duration_sec,
+      status: "draft",
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as PawReport;
+}
+
+export async function updatePawReport(
+  id: string,
+  patch: Partial<{
+    mood: PawMood | string | null;
+    toilet_poo: boolean;
+    toilet_wee: boolean;
+    voice_note_raw: string | null;
+    report_body: string | null;
+    show_full_route: boolean;
+  }>,
+) {
+  const { data, error } = await supabase
+    .from("paw_reports")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as PawReport;
+}
+
+export async function regeneratePawReportBody(reportId: string) {
+  const { data: report, error } = await supabase
+    .from("paw_reports")
+    .select("*, pet:pets(name)")
+    .eq("id", reportId)
+    .single();
+  if (error) throw error;
+  const petName = (report as { pet?: { name?: string } }).pet?.name ?? "Your dog";
+  const body = polishPawReportCopy({
+    petName,
+    suburb: report.suburb,
+    distanceM: Number(report.distance_m),
+    durationSec: Number(report.duration_sec),
+    mood: report.mood,
+    toiletPoo: report.toilet_poo,
+    toiletWee: report.toilet_wee,
+    rawNote: report.voice_note_raw,
+  });
+  return updatePawReport(reportId, { report_body: body });
+}
+
+export async function sendPawReport(reportId: string) {
+  await regeneratePawReportBody(reportId);
+  const { data, error } = await supabase
+    .from("paw_reports")
+    .update({ status: "sent", sent_at: new Date().toISOString() })
+    .eq("id", reportId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as PawReport;
+}
+
+export async function listPawReportMedia(reportId: string) {
+  const { data, error } = await supabase
+    .from("paw_report_media")
+    .select("*")
+    .eq("report_id", reportId)
+    .order("sort_order", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as PawReportMedia[];
+}
+
+export async function uploadPawReportMedia(
+  ownerId: string,
+  reportId: string,
+  file: File,
+  kind: "photo" | "video",
+) {
+  const ext = file.name.split(".").pop() || (kind === "video" ? "mp4" : "jpg");
+  const path = `${ownerId}/${reportId}/${crypto.randomUUID()}.${ext}`;
+  const { error: upErr } = await supabase.storage
+    .from("paw-report-media")
+    .upload(path, file, { upsert: false });
+  if (upErr) throw upErr;
+
+  const existing = await listPawReportMedia(reportId);
+  const { data, error } = await supabase
+    .from("paw_report_media")
+    .insert({
+      report_id: reportId,
+      kind,
+      storage_path: path,
+      sort_order: existing.length,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as PawReportMedia;
+}
+
+export function pawReportMediaPublicUrl(path: string) {
+  return supabase.storage.from("paw-report-media").getPublicUrl(path).data.publicUrl;
+}
+
+export async function getPublicPawReport(token: string) {
+  const { data, error } = await supabase
+    .from("paw_report_public")
+    .select("*")
+    .eq("public_token", token)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as PublicPawReport | null) ?? null;
+}
+
+export async function getPublicWalkRoute(token: string) {
+  const { data, error } = await supabase.rpc("get_public_walk_route", { p_token: token });
+  if (error) throw error;
+  return (data ?? []) as { lat: number; lng: number; recorded_at: string }[];
+}
+
+export async function listPetWalkStats(petId: string) {
+  const { data, error } = await supabase
+    .from("walks")
+    .select("id, distance_m, duration_sec, started_at, status")
+    .eq("pet_id", petId)
+    .eq("status", "completed")
+    .order("started_at", { ascending: false });
+  if (error) throw error;
+  const walks = data ?? [];
+  const adventureCount = walks.length;
+  const totalKm = walks.reduce((sum, w) => sum + Number(w.distance_m || 0), 0) / 1000;
+  return {
+    adventureCount,
+    totalKm,
+    lastWalkAt: walks[0]?.started_at ?? null,
+    walks,
+  };
+}
+
+export async function listClientSentReports(clientId: string) {
+  const { data, error } = await supabase
+    .from("paw_reports")
+    .select("*, pet:pets(id, name, photo_url)")
+    .eq("client_id", clientId)
+    .eq("status", "sent")
+    .order("sent_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+export function pawReportShareUrl(token: string) {
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/pawreport/${token}`;
+  }
+  return `/pawreport/${token}`;
+}
+
+export async function listWebsiteEnquiries() {
+  const { data, error } = await supabase
+    .from("website_enquiries")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as WebsiteEnquiry[];
+}
+
+export async function countNewWebsiteEnquiries() {
+  const { count, error } = await supabase
+    .from("website_enquiries")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "new");
+  if (error) throw error;
+  return count ?? 0;
+}
+
+export async function updateWebsiteEnquiryStatus(
+  id: string,
+  status: EnquiryStatus,
+  patch?: Partial<Pick<WebsiteEnquiry, "client_id">>,
+) {
+  const { data, error } = await supabase
+    .from("website_enquiries")
+    .update({ status, updated_at: new Date().toISOString(), ...patch })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as WebsiteEnquiry;
 }
