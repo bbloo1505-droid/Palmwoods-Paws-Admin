@@ -1,9 +1,18 @@
 import { createFileRoute } from "@tanstack/react-router";
 import {
   addDays,
+  addMonths,
   addWeeks,
+  eachDayOfInterval,
+  endOfDay,
+  endOfMonth,
+  endOfWeek,
   format,
   isSameDay,
+  isSameMonth,
+  isToday,
+  startOfDay,
+  startOfMonth,
   startOfWeek,
 } from "date-fns";
 import type { FormEvent } from "react";
@@ -11,7 +20,13 @@ import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { ScheduleCard } from "@/components/ScheduleCard";
 import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
-import { createBooking, createRecurringBookings, listClients, listPets, listWeekBookings } from "@/lib/api";
+import {
+  createBooking,
+  createRecurringBookings,
+  listBookingsBetween,
+  listClients,
+  listPets,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   SERVICE_LABELS,
@@ -26,6 +41,10 @@ export const Route = createFileRoute("/calendar")({
   component: CalendarPage,
 });
 
+type CalendarView = "day" | "week" | "month";
+
+const VIEW_STORAGE_KEY = "pp-calendar-view";
+
 const WEEKDAYS = [
   { value: 1, label: "Mon" },
   { value: 2, label: "Tue" },
@@ -36,8 +55,44 @@ const WEEKDAYS = [
   { value: 7, label: "Sun" },
 ] as const;
 
+const VIEW_OPTIONS: { value: CalendarView; label: string }[] = [
+  { value: "day", label: "Day" },
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+];
+
+function readStoredView(): CalendarView {
+  try {
+    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (raw === "day" || raw === "week" || raw === "month") return raw;
+  } catch {
+    /* ignore */
+  }
+  return "week";
+}
+
+function rangeForView(view: CalendarView, anchor: Date) {
+  if (view === "day") {
+    return { from: startOfDay(anchor), to: endOfDay(anchor) };
+  }
+  if (view === "week") {
+    return {
+      from: startOfWeek(anchor, { weekStartsOn: 1 }),
+      to: endOfWeek(anchor, { weekStartsOn: 1 }),
+    };
+  }
+  // Month grid includes leading/trailing days from adjacent months.
+  const monthStart = startOfMonth(anchor);
+  const monthEnd = endOfMonth(anchor);
+  return {
+    from: startOfWeek(monthStart, { weekStartsOn: 1 }),
+    to: endOfWeek(monthEnd, { weekStartsOn: 1 }),
+  };
+}
+
 function CalendarPage() {
   const { ownerId } = useAuth();
+  const [view, setView] = useState<CalendarView>(() => readStoredView());
   const [anchor, setAnchor] = useState(new Date());
   const [jobs, setJobs] = useState<BookingWithRelations[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -61,10 +116,51 @@ function CalendarPage() {
   });
 
   const weekStart = startOfWeek(anchor, { weekStartsOn: 1 });
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  const range = useMemo(() => rangeForView(view, anchor), [view, anchor]);
+
+  const listDays = useMemo(() => {
+    if (view === "day") return [startOfDay(anchor)];
+    if (view === "week") {
+      return Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    }
+    return eachDayOfInterval({ start: range.from, end: range.to });
+  }, [view, anchor, weekStart, range.from, range.to]);
+
+  const setViewPersist = (next: CalendarView) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const goPrev = () => {
+    if (view === "day") setAnchor((d) => addDays(d, -1));
+    else if (view === "week") setAnchor((d) => addWeeks(d, -1));
+    else setAnchor((d) => addMonths(d, -1));
+  };
+
+  const goNext = () => {
+    if (view === "day") setAnchor((d) => addDays(d, 1));
+    else if (view === "week") setAnchor((d) => addWeeks(d, 1));
+    else setAnchor((d) => addMonths(d, 1));
+  };
+
+  const rangeLabel =
+    view === "day"
+      ? format(anchor, "EEEE d MMM yyyy")
+      : view === "week"
+        ? `Week of ${format(weekStart, "d MMM yyyy")}`
+        : format(anchor, "MMMM yyyy");
 
   const reload = async () => {
-    const [b, c, p] = await Promise.all([listWeekBookings(anchor), listClients(), listPets()]);
+    const { from, to } = rangeForView(view, anchor);
+    const [b, c, p] = await Promise.all([
+      listBookingsBetween(from, to),
+      listClients(),
+      listPets(),
+    ]);
     setJobs(b);
     setClients(c);
     setPets(p);
@@ -81,7 +177,7 @@ function CalendarPage() {
   useEffect(() => {
     reload().catch((e) => setError(e instanceof Error ? e.message : "Failed to load calendar"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [anchor]);
+  }, [anchor, view]);
 
   const clientPets = pets.filter((p) => p.client_id === form.client_id);
   const selectedPet = clientPets.find((p) => p.id === form.pet_id) || pets.find((p) => p.id === form.pet_id);
@@ -116,6 +212,11 @@ function CalendarPage() {
         weekdays: has ? f.weekdays.filter((d) => d !== value) : [...f.weekdays, value],
       };
     });
+  };
+
+  const openDay = (day: Date) => {
+    setAnchor(day);
+    setViewPersist("day");
   };
 
   const onCreate = async (e: FormEvent) => {
@@ -176,13 +277,32 @@ function CalendarPage() {
         }
       />
 
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap gap-2">
+          {VIEW_OPTIONS.map((opt) => (
+            <Button
+              key={opt.value}
+              type="button"
+              size="sm"
+              variant={view === opt.value ? "gold" : "secondary"}
+              onClick={() => setViewPersist(opt.value)}
+            >
+              {opt.label}
+            </Button>
+          ))}
+        </div>
+        <Button type="button" size="sm" variant="secondary" onClick={() => setAnchor(new Date())}>
+          Today
+        </Button>
+      </div>
+
       <div className="mb-4 flex items-center justify-between gap-3">
-        <Button variant="secondary" onClick={() => setAnchor(addDays(weekStart, -7))}>
+        <Button variant="secondary" onClick={goPrev}>
           <ChevronLeft className="h-4 w-4" />
           Prev
         </Button>
-        <p className="font-semibold text-olive-950">Week of {format(weekStart, "d MMM yyyy")}</p>
-        <Button variant="secondary" onClick={() => setAnchor(addDays(weekStart, 7))}>
+        <p className="text-center font-semibold text-olive-950">{rangeLabel}</p>
+        <Button variant="secondary" onClick={goNext}>
           Next
           <ChevronRight className="h-4 w-4" />
         </Button>
@@ -376,22 +496,121 @@ function CalendarPage() {
         </Card>
       ) : null}
 
-      <div className="space-y-5">
+      {view === "month" ? (
+        <MonthGrid jobs={jobs} days={listDays} anchor={anchor} onOpenDay={openDay} />
+      ) : (
+        <div className="space-y-5">
+          {listDays.map((day) => {
+            const dayJobs = jobs.filter((j) => isSameDay(new Date(j.starts_at), day));
+            return (
+              <section key={day.toISOString()}>
+                <h3
+                  className={cn(
+                    "mb-2 font-display text-lg text-olive-950",
+                    isToday(day) && "text-olive-800",
+                  )}
+                >
+                  {format(day, "EEEE d MMM")}
+                  {isToday(day) ? (
+                    <span className="ml-2 text-xs font-semibold uppercase tracking-wide text-gold-dark">
+                      Today
+                    </span>
+                  ) : null}
+                </h3>
+                {dayJobs.length === 0 ? (
+                  <Card className="text-sm text-muted">No jobs</Card>
+                ) : (
+                  <div className="space-y-2">
+                    {dayJobs.map((job) => (
+                      <ScheduleCard key={job.id} booking={job} />
+                    ))}
+                  </div>
+                )}
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MonthGrid({
+  jobs,
+  days,
+  anchor,
+  onOpenDay,
+}: {
+  jobs: BookingWithRelations[];
+  days: Date[];
+  anchor: Date;
+  onOpenDay: (day: Date) => void;
+}) {
+  return (
+    <div>
+      <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[11px] font-semibold uppercase tracking-wide text-muted">
+        {WEEKDAYS.map((d) => (
+          <div key={d.value} className="py-1">
+            {d.label}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-1.5">
         {days.map((day) => {
           const dayJobs = jobs.filter((j) => isSameDay(new Date(j.starts_at), day));
+          const inMonth = isSameMonth(day, anchor);
+          const today = isToday(day);
+          const chips = dayJobs.slice(0, 2);
+
           return (
-            <section key={day.toISOString()}>
-              <h3 className="mb-2 font-display text-lg text-olive-950">{format(day, "EEEE d MMM")}</h3>
-              {dayJobs.length === 0 ? (
-                <Card className="text-sm text-muted">No jobs</Card>
-              ) : (
-                <div className="space-y-2">
-                  {dayJobs.map((job) => (
-                    <ScheduleCard key={job.id} booking={job} />
-                  ))}
-                </div>
+            <button
+              key={day.toISOString()}
+              type="button"
+              onClick={() => onOpenDay(day)}
+              className={cn(
+                "flex min-h-[4.5rem] flex-col rounded-xl border px-1.5 py-1.5 text-left transition sm:min-h-[5.5rem]",
+                today
+                  ? "border-olive-800 bg-olive-800 text-warm-white"
+                  : inMonth
+                    ? "border-olive-100 bg-warm-white text-olive-950 hover:border-olive-700/40"
+                    : "border-transparent bg-cream/40 text-muted hover:border-olive-100",
               )}
-            </section>
+            >
+              <span
+                className={cn(
+                  "text-sm font-semibold",
+                  today ? "text-gold" : inMonth ? "text-olive-950" : "text-muted",
+                )}
+              >
+                {format(day, "d")}
+              </span>
+              {dayJobs.length > 0 ? (
+                <div className="mt-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden">
+                  {chips.map((job) => (
+                    <span
+                      key={job.id}
+                      className={cn(
+                        "truncate rounded px-1 py-0.5 text-[10px] font-medium leading-tight",
+                        today ? "bg-warm-white/15 text-warm-white" : "bg-olive-100 text-olive-900",
+                      )}
+                    >
+                      {format(new Date(job.starts_at), "h:mmaaa").replace(" ", "")}{" "}
+                      {job.pet?.name ?? "Pet"}
+                    </span>
+                  ))}
+                  {dayJobs.length > 2 ? (
+                    <span
+                      className={cn(
+                        "text-[10px] font-semibold",
+                        today ? "text-gold" : "text-muted",
+                      )}
+                    >
+                      +{dayJobs.length - 2} more
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+            </button>
           );
         })}
       </div>
