@@ -22,6 +22,7 @@ type AuthContextValue = {
   authDisabled: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null }>;
+  resetPassword: (email: string) => Promise<{ error: string | null }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
 };
@@ -117,6 +118,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error?.message ?? null };
   }, []);
 
+  const resetPassword = useCallback(async (email: string) => {
+    if (AUTH_DISABLED) return { error: null };
+    const redirectTo = `${window.location.origin}/login`;
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+    return { error: error?.message ?? null };
+  }, []);
+
   const signOut = useCallback(async () => {
     if (AUTH_DISABLED) return;
     await supabase.auth.signOut();
@@ -124,7 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const activeUser = AUTH_DISABLED ? localUser : (session?.user ?? null);
-  const ownerId = activeUser?.id ?? LOCAL_OWNER_ID;
+  const ownerId = AUTH_DISABLED ? LOCAL_OWNER_ID : (activeUser?.id ?? "");
 
   const value = useMemo<AuthContextValue>(
     () => ({
@@ -137,10 +145,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       authDisabled: AUTH_DISABLED,
       signIn,
       signUp,
+      resetPassword,
       signOut,
       refreshProfile,
     }),
-    [session, activeUser, profile, ownerId, loading, signIn, signUp, signOut, refreshProfile],
+    [
+      session,
+      activeUser,
+      profile,
+      ownerId,
+      loading,
+      signIn,
+      signUp,
+      resetPassword,
+      signOut,
+      refreshProfile,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { Camera, Mic, Share2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Camera, Mic, Share2, Trash2, Video } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
 import {
+  deletePawReportMedia,
   getOrCreatePawReport,
   getWalk,
   listPawReportMedia,
@@ -11,7 +12,7 @@ import {
   regeneratePawReportBody,
   deliverPawReport,
   updatePawReport,
-  uploadPawReportMedia,
+  uploadPawReportMediaMany,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { MOOD_OPTIONS, type PawMood, type PawReport, type PawReportMedia } from "@/lib/types";
@@ -24,12 +25,18 @@ export const Route = createFileRoute("/walks/$walkId/report")({
 function PawReportComposePage() {
   const { walkId } = Route.useParams();
   const { ownerId } = useAuth();
+  const photoLibraryRef = useRef<HTMLInputElement>(null);
+  const photoCameraRef = useRef<HTMLInputElement>(null);
+  const videoLibraryRef = useRef<HTMLInputElement>(null);
+  const videoCameraRef = useRef<HTMLInputElement>(null);
+
   const [walk, setWalk] = useState<Awaited<ReturnType<typeof getWalk>> | null>(null);
   const [report, setReport] = useState<PawReport | null>(null);
   const [media, setMedia] = useState<(PawReportMedia & { url: string })[]>([]);
   const [rawNote, setRawNote] = useState("");
   const [preview, setPreview] = useState("");
   const [busy, setBusy] = useState(false);
+  const [uploading, setUploading] = useState<"photo" | "video" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [emailedTo, setEmailedTo] = useState<string | null>(null);
@@ -105,14 +112,32 @@ function PawReportComposePage() {
     recognition.start();
   };
 
-  const onUpload = async (file: File | null, kind: "photo" | "video") => {
-    if (!file || !report || !ownerId) return;
-    setBusy(true);
+  const onUpload = async (files: FileList | null, kind: "photo" | "video") => {
+    if (!files?.length || !report || !ownerId) return;
+    setUploading(kind);
+    setError(null);
     try {
-      await uploadPawReportMedia(ownerId, report.id, file, kind);
+      await uploadPawReportMediaMany(ownerId, report.id, Array.from(files), kind);
       await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(null);
+      if (photoLibraryRef.current) photoLibraryRef.current.value = "";
+      if (photoCameraRef.current) photoCameraRef.current.value = "";
+      if (videoLibraryRef.current) videoLibraryRef.current.value = "";
+      if (videoCameraRef.current) videoCameraRef.current.value = "";
+    }
+  };
+
+  const onRemoveMedia = async (item: PawReportMedia & { url: string }) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await deletePawReportMedia(item);
+      setMedia((prev) => prev.filter((m) => m.id !== item.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove media");
     } finally {
       setBusy(false);
     }
@@ -144,6 +169,10 @@ function PawReportComposePage() {
   if (!walk || !report) {
     return <p className="text-muted">{error ?? "Preparing Paw Report…"}</p>;
   }
+
+  const photoCount = media.filter((m) => m.kind === "photo").length;
+  const videoCount = media.filter((m) => m.kind === "video").length;
+  const mediaBusy = busy || Boolean(uploading);
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
@@ -220,7 +249,7 @@ function PawReportComposePage() {
             placeholder={`${walk.pet?.name} was really energetic today…`}
           />
         </Field>
-        <Button type="button" variant="secondary" disabled={busy} onClick={() => void onPolish()}>
+        <Button type="button" variant="secondary" disabled={mediaBusy} onClick={() => void onPolish()}>
           Polish into Paw Report
         </Button>
         <Field label="Owner-facing update">
@@ -232,41 +261,121 @@ function PawReportComposePage() {
         </Field>
       </Card>
 
-      <Card>
-        <h3 className="mb-3 font-display text-lg">Today&apos;s media</h3>
-        <div className="mb-3 flex flex-wrap gap-2">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-olive-800 px-4 py-2 text-sm font-semibold text-warm-white">
-            <Camera className="h-4 w-4" />
-            Photo
-            <input
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="hidden"
-              onChange={(e) => void onUpload(e.target.files?.[0] ?? null, "photo")}
-            />
-          </label>
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-olive-100 bg-cream px-4 py-2 text-sm font-semibold">
-            + Video clip
-            <input
-              type="file"
-              accept="video/*"
-              className="hidden"
-              onChange={(e) => void onUpload(e.target.files?.[0] ?? null, "video")}
-            />
-          </label>
+      <Card className="space-y-4">
+        <div>
+          <h3 className="font-display text-lg">Photos &amp; video</h3>
+          <p className="mt-1 text-sm text-muted">
+            Add snaps and a short face-cam clip for the owner page.
+            {photoCount || videoCount
+              ? ` ${photoCount} photo${photoCount === 1 ? "" : "s"} · ${videoCount} video${
+                  videoCount === 1 ? "" : "s"
+                }.`
+              : ""}
+          </p>
         </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            type="button"
+            variant="gold"
+            className="min-h-12"
+            disabled={mediaBusy}
+            onClick={() => photoLibraryRef.current?.click()}
+          >
+            <Camera className="h-4 w-4" />
+            {uploading === "photo" ? "Uploading…" : "Add photos"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-12"
+            disabled={mediaBusy}
+            onClick={() => photoCameraRef.current?.click()}
+          >
+            Take photo
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-12"
+            disabled={mediaBusy}
+            onClick={() => videoLibraryRef.current?.click()}
+          >
+            <Video className="h-4 w-4" />
+            {uploading === "video" ? "Uploading…" : "Add video"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-12"
+            disabled={mediaBusy}
+            onClick={() => videoCameraRef.current?.click()}
+          >
+            Record video
+          </Button>
+        </div>
+
+        <input
+          ref={photoLibraryRef}
+          type="file"
+          accept="image/*"
+          multiple
+          className="hidden"
+          onChange={(e) => void onUpload(e.target.files, "photo")}
+        />
+        <input
+          ref={photoCameraRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => void onUpload(e.target.files, "photo")}
+        />
+        <input
+          ref={videoLibraryRef}
+          type="file"
+          accept="video/*"
+          className="hidden"
+          onChange={(e) => void onUpload(e.target.files, "video")}
+        />
+        <input
+          ref={videoCameraRef}
+          type="file"
+          accept="video/*"
+          capture="environment"
+          className="hidden"
+          onChange={(e) => void onUpload(e.target.files, "video")}
+        />
+
         {media.length === 0 ? (
-          <p className="text-sm text-muted">Add photos or a short face-cam clip (10–30s).</p>
+          <p className="rounded-xl border border-dashed border-olive-100 bg-cream/50 px-3 py-6 text-center text-sm text-muted">
+            No media yet. Owners love a couple of photos and a 10–30s clip.
+          </p>
         ) : (
           <div className="grid grid-cols-2 gap-2">
-            {media.map((m) =>
-              m.kind === "video" ? (
-                <video key={m.id} src={m.url} controls className="aspect-square rounded-xl object-cover" />
-              ) : (
-                <img key={m.id} src={m.url} alt="" className="aspect-square rounded-xl object-cover" />
-              ),
-            )}
+            {media.map((m) => (
+              <div key={m.id} className="relative overflow-hidden rounded-xl bg-olive-950/5">
+                {m.kind === "video" ? (
+                  <video src={m.url} controls playsInline className="aspect-square w-full object-cover" />
+                ) : (
+                  <img src={m.url} alt="" className="aspect-square w-full object-cover" />
+                )}
+                <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-olive-950/65 px-2 py-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-warm-white">
+                    {m.kind === "video" ? "Video" : "Photo"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={mediaBusy}
+                    onClick={() => void onRemoveMedia(m)}
+                    className="rounded-full bg-warm-white/15 p-1.5 text-warm-white hover:bg-warm-white/25"
+                    aria-label="Remove media"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Card>
@@ -310,7 +419,7 @@ function PawReportComposePage() {
           ) : null}
         </Card>
       ) : (
-        <Button className="w-full min-h-14" size="lg" variant="gold" disabled={busy} onClick={() => void onSend()}>
+        <Button className="w-full min-h-14" size="lg" variant="gold" disabled={mediaBusy} onClick={() => void onSend()}>
           {busy ? "Sending to owner…" : "Send Paw Report"}
         </Button>
       )}

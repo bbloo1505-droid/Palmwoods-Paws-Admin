@@ -42,7 +42,10 @@ function MyPawsPortalPage() {
   useEffect(() => {
     if (!clientId) return;
     listClientSentReports(clientId)
-      .then((rows) => setReports(rows as typeof reports))
+      .then((rows) => {
+        setReports(rows as typeof reports);
+        setError(null);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load reports"));
   }, [clientId]);
 

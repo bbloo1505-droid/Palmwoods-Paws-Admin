@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ClipboardList, FileText, MessageSquare, Settings, PawPrint } from "lucide-react";
+import { ClipboardList, FileText, Images, MessageSquare, Settings, PawPrint } from "lucide-react";
 import { Card, PageHeader } from "@/components/ui";
 
 export const Route = createFileRoute("/more")({
@@ -9,6 +9,7 @@ export const Route = createFileRoute("/more")({
 const links = [
   { to: "/visits", label: "Visits", icon: ClipboardList },
   { to: "/invoices", label: "Invoices", icon: FileText },
+  { to: "/gallery", label: "Website gallery", icon: Images },
   { to: "/my-paws", label: "My Paws", icon: PawPrint },
   { to: "/messages", label: "Enquiries", icon: MessageSquare },
   { to: "/settings", label: "Settings", icon: Settings },

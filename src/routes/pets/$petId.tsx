@@ -24,12 +24,22 @@ function PetDetailPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setError(null);
     getPet(petId)
       .then(async (p) => {
         setPet(p);
-        const [c, s] = await Promise.all([getClient(p.client_id), listPetWalkStats(p.id)]);
-        setClient(c);
-        setStats(s);
+        try {
+          const c = await getClient(p.client_id);
+          setClient(c);
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Could not load client");
+        }
+        try {
+          const s = await listPetWalkStats(p.id);
+          setStats(s);
+        } catch {
+          setStats({ adventureCount: 0, totalKm: 0, lastWalkAt: null, walks: [] });
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load pet"));
   }, [petId]);
@@ -46,11 +56,7 @@ function PetDetailPage() {
       });
       void navigate({ to: "/walks/$walkId", params: { walkId: walk.id } });
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message}. Run the Paw Reports SQL migration if tables are missing.`
-          : "Could not start walk",
-      );
+      setError(err instanceof Error ? err.message : "Could not start walk");
     } finally {
       setBusy(false);
     }

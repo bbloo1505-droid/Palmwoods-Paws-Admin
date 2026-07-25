@@ -16,6 +16,10 @@ function RootComponent() {
       navigate({ to: "/" });
       return;
     }
+    if (!authDisabled && !loading && user && isLogin) {
+      navigate({ to: "/" });
+      return;
+    }
     if (!authDisabled && !loading && !user && !isLogin && !isPublicCustomer) {
       navigate({ to: "/login" });
     }

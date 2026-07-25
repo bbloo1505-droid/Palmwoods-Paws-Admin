@@ -36,13 +36,21 @@ export function RouteMap({
 
   const d = points.map(project).join(" ");
 
+  const start = project(points[0]).split(",");
+  const end = project(points[points.length - 1]).split(",");
+
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
-      className={`w-full rounded-2xl bg-[#e7efe4] ${className}`}
+      className={`w-full rounded-2xl bg-[radial-gradient(circle_at_30%_20%,#f7f4ec,transparent_45%),linear-gradient(160deg,#e7efe4,#d9e4d4)] ${className}`}
       role="img"
       aria-label="Walk route map"
     >
+      <defs>
+        <filter id="pp-route-soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="1" stdDeviation="1.2" floodColor="#2b3026" floodOpacity="0.18" />
+        </filter>
+      </defs>
       <polyline
         fill="none"
         stroke="#4b5742"
@@ -50,14 +58,10 @@ export function RouteMap({
         strokeLinecap="round"
         strokeLinejoin="round"
         points={d}
+        filter="url(#pp-route-soft)"
       />
-      <circle cx={project(points[0]).split(",")[0]} cy={project(points[0]).split(",")[1]} r="5" fill="#c9a227" />
-      <circle
-        cx={project(points[points.length - 1]).split(",")[0]}
-        cy={project(points[points.length - 1]).split(",")[1]}
-        r="5"
-        fill="#4a7c59"
-      />
+      <circle cx={start[0]} cy={start[1]} r="6" fill="#c9a227" stroke="#fbf8f3" strokeWidth="2" />
+      <circle cx={end[0]} cy={end[1]} r="6" fill="#4a7c59" stroke="#fbf8f3" strokeWidth="2" />
     </svg>
   );
 }

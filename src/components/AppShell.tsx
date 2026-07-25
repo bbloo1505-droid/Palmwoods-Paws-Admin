@@ -3,6 +3,7 @@ import {
   CalendarDays,
   Dog,
   FileText,
+  Images,
   LayoutDashboard,
   Menu,
   MessageSquare,
@@ -27,6 +28,7 @@ const desktopNav = [
   { to: "/visits", label: "Visits", icon: ClipboardList },
   { to: "/invoices", label: "Invoices", icon: FileText },
   { to: "/messages", label: "Enquiries", icon: MessageSquare },
+  { to: "/gallery", label: "Website gallery", icon: Images },
   { to: "/my-paws", label: "My Paws", icon: Bell },
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;

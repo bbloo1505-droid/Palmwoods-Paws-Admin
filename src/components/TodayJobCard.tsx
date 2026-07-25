@@ -56,11 +56,7 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
         void navigate({ to: "/visits/$visitId", params: { visitId: job.id } });
       }
     } catch (e) {
-      setError(
-        e instanceof Error
-          ? `${e.message}. If walks fail, run the Paw Reports SQL migration in Supabase.`
-          : "Could not start",
-      );
+      setError(e instanceof Error ? e.message : "Could not start");
     } finally {
       setBusy(false);
     }

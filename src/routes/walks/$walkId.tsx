@@ -6,9 +6,10 @@ import {
   finishWalk,
   getOrCreatePawReport,
   getWalk,
+  listPawReportMedia,
   listWalkPoints,
   updatePawReport,
-  uploadPawReportMedia,
+  uploadPawReportMediaMany,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useWalkGps } from "@/hooks/useWalkGps";
@@ -23,8 +24,8 @@ function ActiveWalkPage() {
   const { walkId } = Route.useParams();
   const { ownerId } = useAuth();
   const navigate = useNavigate();
-  const photoRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLInputElement>(null);
+  const photoLibraryRef = useRef<HTMLInputElement>(null);
 
   const [walk, setWalk] = useState<Awaited<ReturnType<typeof getWalk>> | null>(null);
   const [points, setPoints] = useState<WalkTrackPoint[]>([]);
@@ -46,10 +47,15 @@ function ActiveWalkPage() {
 
   useEffect(() => {
     getWalk(walkId)
-      .then((w) => {
+      .then(async (w) => {
         setWalk(w);
         const report = Array.isArray(w.report) ? w.report[0] : w.report;
-        if (report?.id) setReportId(report.id);
+        if (report?.id) {
+          setReportId(report.id);
+          const media = await listPawReportMedia(report.id);
+          setPhotoCount(media.filter((m) => m.kind === "photo").length);
+          setVideoCount(media.filter((m) => m.kind === "video").length);
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load walk"));
     listWalkPoints(walkId)
@@ -109,19 +115,21 @@ function ActiveWalkPage() {
     }
   };
 
-  const onMedia = async (file: File | null, kind: "photo" | "video") => {
-    if (!file || !ownerId) return;
+  const onMedia = async (files: FileList | null, kind: "photo" | "video") => {
+    if (!files?.length || !ownerId) return;
     setBusy(true);
     setError(null);
     try {
       const id = await ensureReport();
-      await uploadPawReportMedia(ownerId, id, file, kind);
-      if (kind === "photo") setPhotoCount((n) => n + 1);
-      else setVideoCount((n) => n + 1);
+      const uploaded = await uploadPawReportMediaMany(ownerId, id, Array.from(files), kind);
+      if (kind === "photo") setPhotoCount((n) => n + uploaded.length);
+      else setVideoCount((n) => n + uploaded.length);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Upload failed");
     } finally {
       setBusy(false);
+      if (photoLibraryRef.current) photoLibraryRef.current.value = "";
+      if (videoRef.current) videoRef.current.value = "";
     }
   };
 
@@ -151,14 +159,14 @@ function ActiveWalkPage() {
   const actions = [
     {
       key: "photo",
-      label: "Photo",
+      label: photoCount ? `Photo (${photoCount})` : "Photo",
       emoji: "📷",
       active: photoCount > 0,
-      onClick: () => photoRef.current?.click(),
+      onClick: () => photoLibraryRef.current?.click(),
     },
     {
       key: "video",
-      label: "Video",
+      label: videoCount ? `Video (${videoCount})` : "Video",
       emoji: "🎥",
       active: videoCount > 0,
       onClick: () => videoRef.current?.click(),
@@ -282,20 +290,19 @@ function ActiveWalkPage() {
       ) : null}
 
       <input
-        ref={photoRef}
+        ref={photoLibraryRef}
         type="file"
         accept="image/*"
-        capture="environment"
+        multiple
         className="hidden"
-        onChange={(e) => void onMedia(e.target.files?.[0] ?? null, "photo")}
+        onChange={(e) => void onMedia(e.target.files, "photo")}
       />
       <input
         ref={videoRef}
         type="file"
         accept="video/*"
-        capture="environment"
         className="hidden"
-        onChange={(e) => void onMedia(e.target.files?.[0] ?? null, "video")}
+        onChange={(e) => void onMedia(e.target.files, "video")}
       />
 
       <RouteMap points={points} className="min-h-40" />

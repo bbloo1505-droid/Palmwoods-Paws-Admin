@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RouteMap } from "@/components/RouteMap";
 import {
   getPublicPawReport,
@@ -11,18 +11,21 @@ import {
 import { LOGO_SRC } from "@/lib/brand";
 import type { PublicPawReport } from "@/lib/types";
 import { MOOD_OPTIONS } from "@/lib/types";
-import { formatDistanceKm, formatDuration } from "@/lib/utils";
+import { cn, formatDistanceKm, formatDuration } from "@/lib/utils";
 
 export const Route = createFileRoute("/pawreport/$token")({
   component: PublicPawReportPage,
 });
 
+type MediaItem = { kind: string; url: string; id: string };
+
 function PublicPawReportPage() {
   const { token } = Route.useParams();
   const [report, setReport] = useState<PublicPawReport | null>(null);
   const [route, setRoute] = useState<{ lat: number; lng: number }[]>([]);
-  const [media, setMedia] = useState<{ kind: string; url: string; id: string }[]>([]);
+  const [media, setMedia] = useState<MediaItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [lightbox, setLightbox] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -33,9 +36,9 @@ function PublicPawReportPage() {
           return;
         }
         setReport(r);
+        document.title = `${r.pet_name}'s Paw Report · Palmwoods Paws`;
         const [pts, m] = await Promise.all([
           getPublicWalkRoute(token),
-          // media via report id — public select on sent reports
           listPawReportMedia(r.id),
         ]);
         setRoute(pts);
@@ -46,102 +49,298 @@ function PublicPawReportPage() {
     })();
   }, [token]);
 
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setLightbox(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [lightbox]);
+
   if (error) {
     return (
-      <div className="grid min-h-dvh place-items-center bg-cream px-4">
-        <p className="text-muted">{error}</p>
+      <div className="grid min-h-dvh place-items-center bg-[#f3efe6] px-6 text-center">
+        <div className="max-w-sm">
+          <img src={LOGO_SRC} alt="Palmwoods Paws" className="mx-auto h-12 w-auto object-contain" />
+          <p className="mt-6 text-muted">{error}</p>
+        </div>
       </div>
     );
   }
 
   if (!report) {
     return (
-      <div className="grid min-h-dvh place-items-center bg-cream px-4 text-muted">
-        Loading adventure…
+      <div className="grid min-h-dvh place-items-center bg-[#f3efe6] px-4">
+        <div className="pp-fade-up text-center">
+          <img src={LOGO_SRC} alt="Palmwoods Paws" className="mx-auto h-12 w-auto object-contain opacity-80" />
+          <p className="mt-4 text-sm text-muted">Opening today&apos;s adventure…</p>
+        </div>
       </div>
     );
   }
 
+  return (
+    <>
+      <PawReportView
+        report={report}
+        route={route}
+        media={media}
+        onOpenPhoto={setLightbox}
+      />
+      {lightbox ? (
+        <button
+          type="button"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-olive-950/90 p-4"
+          onClick={() => setLightbox(null)}
+          aria-label="Close photo"
+        >
+          <img
+            src={lightbox}
+            alt=""
+            className="max-h-[90vh] max-w-full rounded-lg object-contain shadow-2xl"
+          />
+        </button>
+      ) : null}
+    </>
+  );
+}
+
+function PawReportView({
+  report,
+  route,
+  media,
+  onOpenPhoto,
+}: {
+  report: PublicPawReport;
+  route: { lat: number; lng: number }[];
+  media: MediaItem[];
+  onOpenPhoto: (url: string) => void;
+}) {
   const mood = MOOD_OPTIONS.find((m) => m.value === report.mood);
-  const video = media.find((m) => m.kind === "video");
+  const videos = media.filter((m) => m.kind === "video");
   const photos = media.filter((m) => m.kind === "photo");
 
+  const heroUrl = useMemo(() => {
+    if (photos[0]?.url) return photos[0].url;
+    if (report.pet_photo_url) return report.pet_photo_url;
+    return null;
+  }, [photos, report.pet_photo_url]);
+
+  const galleryPhotos = heroUrl && photos[0]?.url === heroUrl ? photos.slice(1) : photos;
+  const dateLabel = report.sent_at
+    ? format(new Date(report.sent_at), "EEEE d MMMM")
+    : format(new Date(report.created_at), "EEEE d MMMM");
+
+  const toiletBits = [
+    report.toilet_poo ? "Poo" : null,
+    report.toilet_wee ? "Wee" : null,
+  ].filter(Boolean) as string[];
+
   return (
-    <div className="min-h-dvh bg-cream">
-      <header className="bg-olive-800 px-4 py-5 text-center">
-        <img src={LOGO_SRC} alt="Palmwoods Paws" className="mx-auto h-14 w-auto object-contain" />
+    <div className="min-h-dvh bg-[#f3efe6] text-ink">
+      {/* Atmospheric wash — keeps cream from feeling flat */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none fixed inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(120% 80% at 50% -10%, #dfe6d8 0%, transparent 55%), radial-gradient(80% 50% at 100% 100%, #e8dfc8 0%, transparent 45%), #f3efe6",
+        }}
+      />
+
+      <header className="relative isolate overflow-hidden">
+        <div className="relative min-h-[58vh] sm:min-h-[62vh]">
+          {heroUrl ? (
+            <img
+              src={heroUrl}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+          ) : (
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(160deg, #3d4636 0%, #4b5742 45%, #6a735c 100%)",
+              }}
+            />
+          )}
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(43,48,38,0.55) 0%, rgba(43,48,38,0.15) 38%, rgba(43,48,38,0.72) 100%)",
+            }}
+          />
+
+          <div className="relative flex min-h-[58vh] flex-col justify-between px-5 pb-8 pt-6 sm:min-h-[62vh] sm:px-8 sm:pb-10">
+            <div className="pp-fade-up flex justify-center">
+              <img
+                src={LOGO_SRC}
+                alt="Palmwoods Paws"
+                className="h-14 w-auto object-contain drop-shadow-md sm:h-16"
+              />
+            </div>
+
+            <div className="pp-fade-up-delay mx-auto max-w-lg text-center text-warm-white">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-gold">
+                Paw Report · {dateLabel}
+              </p>
+              <h1 className="mt-3 font-display text-[2.65rem] leading-[1.05] tracking-tight sm:text-5xl">
+                {report.pet_name}&apos;s adventure
+              </h1>
+              <p className="mt-3 text-base text-warm-white/85 sm:text-lg">
+                {formatDuration(report.duration_sec)}
+                <span className="mx-2 text-gold/80">·</span>
+                {formatDistanceKm(report.distance_m)}
+                {report.suburb ? (
+                  <>
+                    <span className="mx-2 text-gold/80">·</span>
+                    {report.suburb}
+                  </>
+                ) : null}
+              </p>
+            </div>
+          </div>
+        </div>
       </header>
 
-      <main className="mx-auto max-w-lg space-y-5 px-4 py-6 pb-16">
-        <div className="text-center">
-          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-gold-dark">
-            {report.sent_at ? format(new Date(report.sent_at), "EEEE d MMMM") : "Adventure"}
-          </p>
-          <h1 className="mt-2 font-display text-3xl text-olive-950">
-            {report.pet_name}&apos;s Adventure
-          </h1>
-          <p className="mt-1 text-muted">
-            {formatDuration(report.duration_sec)} · {formatDistanceKm(report.distance_m)}
-            {report.suburb ? ` · ${report.suburb}` : ""}
-          </p>
-        </div>
-
-        {video ? (
-          <section className="overflow-hidden rounded-3xl bg-olive-950 shadow-sm">
-            <p className="px-4 pt-3 text-xs font-semibold uppercase tracking-wide text-gold">
-              {report.pet_name} Cam
-            </p>
-            <video src={video.url} controls playsInline className="mt-2 aspect-[9/16] max-h-[70vh] w-full object-cover" />
+      <main className="relative mx-auto max-w-lg px-5 pb-20 pt-8 sm:px-6">
+        {(mood || toiletBits.length > 0) && (
+          <section className="pp-fade-up mb-10 flex flex-wrap items-center justify-center gap-2">
+            {mood ? (
+              <span className="inline-flex items-center gap-2 rounded-full bg-olive-800 px-4 py-2 text-sm font-semibold text-warm-white">
+                <span aria-hidden="true">{mood.emoji}</span>
+                {mood.label} today
+              </span>
+            ) : null}
+            {toiletBits.length > 0 ? (
+              <span className="inline-flex items-center gap-2 rounded-full border border-olive-800/15 bg-warm-white/80 px-4 py-2 text-sm font-medium text-olive-900 backdrop-blur">
+                Toilet break · {toiletBits.join(" & ")} ✓
+              </span>
+            ) : null}
           </section>
-        ) : null}
+        )}
 
-        <section className="rounded-3xl border border-olive-100 bg-warm-white p-4 shadow-sm">
-          <h2 className="font-display text-xl text-olive-950">Today&apos;s adventure</h2>
-          <RouteMap points={route} className="mt-3 min-h-48" />
-          <p className="mt-2 text-xs text-muted">
-            Route preview hides the start and end near home for privacy.
-          </p>
-        </section>
-
-        <section className="grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-olive-100 bg-warm-white p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">Mood</p>
-            <p className="mt-1 text-lg font-semibold">
-              {mood ? `${mood.emoji} ${mood.label}` : "Happy"}
-            </p>
-          </div>
-          <div className="rounded-2xl border border-olive-100 bg-warm-white p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">Toilet</p>
-            <p className="mt-1 text-lg font-semibold">
-              {report.toilet_poo ? "💩 ✓ " : ""}
-              {report.toilet_wee ? "💧 ✓" : ""}
-              {!report.toilet_poo && !report.toilet_wee ? "—" : ""}
-            </p>
-          </div>
-        </section>
+        {videos.map((video, index) => (
+          <section
+            key={video.id}
+            className="pp-fade-up mb-10 overflow-hidden rounded-[1.75rem] bg-olive-950 shadow-[0_20px_50px_-28px_rgba(43,48,38,0.55)]"
+          >
+            <div className="flex items-center justify-between px-5 py-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gold">
+                {report.pet_name} Cam
+                {videos.length > 1 ? ` · ${index + 1}` : ""}
+              </p>
+              <p className="text-xs text-warm-white/50">Tap to play</p>
+            </div>
+            <video
+              src={video.url}
+              controls
+              playsInline
+              preload="metadata"
+              className="aspect-[9/16] max-h-[72vh] w-full bg-black object-cover"
+            />
+          </section>
+        ))}
 
         {report.report_body ? (
-          <section className="rounded-3xl border border-olive-100 bg-warm-white p-5 shadow-sm">
-            <h2 className="font-display text-xl text-olive-950">Anna&apos;s update</h2>
-            <p className="mt-3 whitespace-pre-wrap leading-relaxed text-ink">{report.report_body}</p>
+          <section className="pp-fade-up mb-12">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-gold-dark">
+              From Anna
+            </p>
+            <blockquote className="mt-3 border-l-[3px] border-gold pl-5">
+              <p className="font-display text-[1.45rem] leading-relaxed text-olive-950 sm:text-[1.65rem]">
+                {report.report_body}
+              </p>
+            </blockquote>
+            <p className="mt-4 text-sm text-muted">
+              Caring for {report.pet_name} like they&apos;re our own.
+            </p>
           </section>
         ) : null}
 
-        {photos.length > 0 ? (
-          <section>
-            <h2 className="mb-3 font-display text-xl text-olive-950">Photos</h2>
-            <div className="grid grid-cols-2 gap-2">
-              {photos.map((p) => (
-                <img key={p.id} src={p.url} alt="" className="aspect-square rounded-2xl object-cover" />
+        {galleryPhotos.length > 0 ? (
+          <section className="pp-fade-up mb-12">
+            <div className="mb-4 flex items-end justify-between gap-3">
+              <h2 className="font-display text-2xl text-olive-950">Snapshots</h2>
+              <p className="text-xs text-muted">{galleryPhotos.length} photo{galleryPhotos.length === 1 ? "" : "s"}</p>
+            </div>
+            <div
+              className={cn(
+                "grid gap-2.5",
+                galleryPhotos.length === 1 ? "grid-cols-1" : "grid-cols-2",
+              )}
+            >
+              {galleryPhotos.map((p, i) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => onOpenPhoto(p.url)}
+                  className={cn(
+                    "group relative overflow-hidden rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-gold",
+                    galleryPhotos.length === 3 && i === 0 ? "col-span-2 aspect-[16/10]" : "aspect-square",
+                    galleryPhotos.length === 1 ? "aspect-[4/5]" : null,
+                  )}
+                >
+                  <img
+                    src={p.url}
+                    alt={`${report.pet_name} on walk`}
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.03]"
+                  />
+                </button>
               ))}
             </div>
           </section>
         ) : null}
 
-        <footer className="space-y-3 pt-4 text-center">
-          <p className="text-sm text-muted">Palmwoods Paws · Caring for pets like they&apos;re our own</p>
-          <Link to="/my-paws" className="inline-block text-sm font-semibold text-olive-800">
-            View all adventures →
+        {route.length >= 2 ? (
+          <section className="pp-fade-up mb-12">
+            <h2 className="font-display text-2xl text-olive-950">Today&apos;s route</h2>
+            <p className="mt-1 text-sm text-muted">
+              A soft preview of the wander — start and end near home stay private.
+            </p>
+            <div className="mt-4 overflow-hidden rounded-[1.75rem] border border-olive-800/10 bg-warm-white/70 p-3 shadow-[0_16px_40px_-30px_rgba(43,48,38,0.45)] backdrop-blur">
+              <RouteMap points={route} className="min-h-52" />
+              <div className="mt-3 flex items-center justify-center gap-5 text-xs text-muted">
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-gold" />
+                  Start
+                </span>
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-2.5 rounded-full bg-success" />
+                  Finish
+                </span>
+              </div>
+            </div>
+          </section>
+        ) : null}
+
+        <footer className="pp-fade-up border-t border-olive-800/10 pt-8 text-center">
+          <img
+            src={LOGO_SRC}
+            alt=""
+            className="mx-auto h-10 w-auto object-contain opacity-90"
+          />
+          <p className="mt-4 font-display text-lg text-olive-950">Palmwoods Paws</p>
+          <p className="mt-1 text-sm text-muted">
+            Dog walking &amp; pet minding · Sunshine Coast
+          </p>
+          <p className="mt-4 text-sm text-olive-900">
+            <a href="mailto:contact@palmwoodspaws.com" className="font-semibold underline-offset-2 hover:underline">
+              contact@palmwoodspaws.com
+            </a>
+            <span className="mx-2 text-muted">·</span>
+            <a href="tel:0407781752" className="font-semibold underline-offset-2 hover:underline">
+              0407 781 752
+            </a>
+          </p>
+          <Link
+            to="/my-paws"
+            className="mt-6 inline-block text-sm font-semibold text-olive-800 underline-offset-4 hover:underline"
+          >
+            View more adventures
           </Link>
         </footer>
       </main>

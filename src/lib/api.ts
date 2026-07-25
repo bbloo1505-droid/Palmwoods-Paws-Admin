@@ -35,6 +35,21 @@ import {
 } from "@/lib/types";
 import { haversineMetres, makePublicToken, polishPawReportCopy } from "@/lib/utils";
 
+function isMissingRelation(error: { message?: string; code?: string } | null | undefined) {
+  if (!error) return false;
+  const msg = error.message || "";
+  return (
+    error.code === "PGRST205" ||
+    /schema cache|does not exist|Could not find the table/i.test(msg)
+  );
+}
+
+export async function walksFeatureAvailable() {
+  const { error } = await supabase.from("walks").select("id").limit(1);
+  if (!error) return true;
+  return !isMissingRelation(error);
+}
+
 export async function listClients() {
   const { data, error } = await supabase
     .from("clients")
@@ -577,7 +592,14 @@ export async function startWalk(
     })
     .select("*")
     .single();
-  if (error) throw error;
+  if (error) {
+    if (isMissingRelation(error)) {
+      throw new Error(
+        "Walk tracking isn't enabled yet. Open Settings → Enable Walks & Paw Reports, run the SQL, then try again.",
+      );
+    }
+    throw error;
+  }
   return data as Walk;
 }
 
@@ -588,7 +610,10 @@ export async function findActiveWalkForBooking(bookingId: string) {
     .eq("booking_id", bookingId)
     .eq("status", "in_progress")
     .maybeSingle();
-  if (error) throw error;
+  if (error) {
+    if (isMissingRelation(error)) return null;
+    throw error;
+  }
   return (data as Walk | null) ?? null;
 }
 
@@ -599,35 +624,46 @@ export async function listActiveWalksByBookingIds(bookingIds: string[]) {
     .select("id, booking_id, status, pet_id")
     .in("booking_id", bookingIds)
     .eq("status", "in_progress");
-  if (error) throw error;
+  if (error) {
+    if (isMissingRelation(error)) return [];
+    throw error;
+  }
   return (data ?? []) as Pick<Walk, "id" | "booking_id" | "status" | "pet_id">[];
 }
 
 /** Start the right job type from a booking: walk (GPS + Paw Report) or visit. */
 export async function startJobFromBooking(ownerId: string, bookingId: string) {
   const booking = await getBooking(bookingId);
+
+  const startOrContinueVisit = async () => {
+    const existing = Array.isArray(booking.visit) ? booking.visit[0] : booking.visit;
+    if (existing?.id) return { kind: "visit" as const, id: existing.id };
+    const visit = await startVisit(ownerId, bookingId);
+    return { kind: "visit" as const, id: visit.id };
+  };
+
   if (booking.service_type === "dog_walk") {
     if (!booking.pet_id || !booking.client_id) {
       throw new Error("This booking needs a pet and client before starting a walk.");
     }
-    const walk = await startWalk(ownerId, {
-      pet_id: booking.pet_id,
-      client_id: booking.client_id,
-      suburb: booking.client?.suburb ?? null,
-      booking_id: booking.id,
-    });
-    return { kind: "walk" as const, id: walk.id };
+    try {
+      const walk = await startWalk(ownerId, {
+        pet_id: booking.pet_id,
+        client_id: booking.client_id,
+        suburb: booking.client?.suburb ?? null,
+        booking_id: booking.id,
+      });
+      return { kind: "walk" as const, id: walk.id };
+    } catch (e) {
+      // Keep Anna moving if Paw Reports SQL isn't installed yet
+      if (e instanceof Error && /Walk tracking isn't enabled/i.test(e.message)) {
+        return startOrContinueVisit();
+      }
+      throw e;
+    }
   }
 
-  const existing = Array.isArray(booking.visit) ? booking.visit[0] : booking.visit;
-  if (existing?.id && existing.status === "in_progress") {
-    return { kind: "visit" as const, id: existing.id };
-  }
-  if (existing?.id && existing.status === "completed") {
-    return { kind: "visit" as const, id: existing.id };
-  }
-  const visit = await startVisit(ownerId, bookingId);
-  return { kind: "visit" as const, id: visit.id };
+  return startOrContinueVisit();
 }
 
 export async function getWalk(id: string) {
@@ -807,17 +843,49 @@ export async function listPawReportMedia(reportId: string) {
   return (data ?? []) as PawReportMedia[];
 }
 
+function mediaExt(file: File, kind: "photo" | "video") {
+  const fromName = file.name.split(".").pop()?.toLowerCase();
+  if (fromName && /^[a-z0-9]{2,5}$/.test(fromName)) return fromName;
+  if (kind === "video") {
+    if (file.type.includes("webm")) return "webm";
+    if (file.type.includes("quicktime")) return "mov";
+    return "mp4";
+  }
+  if (file.type.includes("png")) return "png";
+  if (file.type.includes("webp")) return "webp";
+  if (file.type.includes("heic") || file.type.includes("heif")) return "heic";
+  return "jpg";
+}
+
 export async function uploadPawReportMedia(
   ownerId: string,
   reportId: string,
   file: File,
   kind: "photo" | "video",
 ) {
-  const ext = file.name.split(".").pop() || (kind === "video" ? "mp4" : "jpg");
+  if (kind === "photo" && !file.type.startsWith("image/") && file.type !== "") {
+    throw new Error("That file isn't a photo. Choose an image.");
+  }
+  if (kind === "video" && !file.type.startsWith("video/") && file.type !== "") {
+    throw new Error("That file isn't a video. Choose a video clip.");
+  }
+  // Keep clips phone-friendly; Supabase free tier default is usually 50MB.
+  const maxBytes = kind === "video" ? 80 * 1024 * 1024 : 12 * 1024 * 1024;
+  if (file.size > maxBytes) {
+    throw new Error(
+      kind === "video"
+        ? "Video is too large (max about 80MB). Try a shorter 10–30s clip."
+        : "Photo is too large (max about 12MB).",
+    );
+  }
+
+  const ext = mediaExt(file, kind);
   const path = `${ownerId}/${reportId}/${crypto.randomUUID()}.${ext}`;
-  const { error: upErr } = await supabase.storage
-    .from("paw-report-media")
-    .upload(path, file, { upsert: false });
+  const { error: upErr } = await supabase.storage.from("paw-report-media").upload(path, file, {
+    upsert: false,
+    contentType: file.type || (kind === "video" ? "video/mp4" : "image/jpeg"),
+    cacheControl: "3600",
+  });
   if (upErr) throw upErr;
 
   const existing = await listPawReportMedia(reportId);
@@ -833,6 +901,28 @@ export async function uploadPawReportMedia(
     .single();
   if (error) throw error;
   return data as PawReportMedia;
+}
+
+export async function uploadPawReportMediaMany(
+  ownerId: string,
+  reportId: string,
+  files: File[],
+  kind: "photo" | "video",
+) {
+  const uploaded: PawReportMedia[] = [];
+  for (const file of files) {
+    uploaded.push(await uploadPawReportMedia(ownerId, reportId, file, kind));
+  }
+  return uploaded;
+}
+
+export async function deletePawReportMedia(media: Pick<PawReportMedia, "id" | "storage_path">) {
+  const { error: storageError } = await supabase.storage
+    .from("paw-report-media")
+    .remove([media.storage_path]);
+  if (storageError) throw storageError;
+  const { error } = await supabase.from("paw_report_media").delete().eq("id", media.id);
+  if (error) throw error;
 }
 
 export function pawReportMediaPublicUrl(path: string) {
@@ -856,13 +946,22 @@ export async function getPublicWalkRoute(token: string) {
 }
 
 export async function listPetWalkStats(petId: string) {
+  const empty = {
+    adventureCount: 0,
+    totalKm: 0,
+    lastWalkAt: null as string | null,
+    walks: [] as { id: string; distance_m: number; duration_sec: number; started_at: string; status: string }[],
+  };
   const { data, error } = await supabase
     .from("walks")
     .select("id, distance_m, duration_sec, started_at, status")
     .eq("pet_id", petId)
     .eq("status", "completed")
     .order("started_at", { ascending: false });
-  if (error) throw error;
+  if (error) {
+    if (isMissingRelation(error)) return empty;
+    throw error;
+  }
   const walks = data ?? [];
   const adventureCount = walks.length;
   const totalKm = walks.reduce((sum, w) => sum + Number(w.distance_m || 0), 0) / 1000;
@@ -881,6 +980,7 @@ export async function listClientSentReports(clientId: string) {
     .eq("client_id", clientId)
     .eq("status", "sent")
     .order("sent_at", { ascending: false });
+  if (error && isMissingRelation(error)) return [];
   if (error) throw error;
   return data ?? [];
 }

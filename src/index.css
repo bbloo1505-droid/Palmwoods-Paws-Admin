@@ -48,3 +48,30 @@ a {
   color: inherit;
   text-decoration: none;
 }
+
+/* Public Paw Report — soft entrance */
+@keyframes pp-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.pp-fade-up {
+  animation: pp-fade-up 0.7s ease-out both;
+}
+
+.pp-fade-up-delay {
+  animation: pp-fade-up 0.85s ease-out 0.12s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-fade-up,
+  .pp-fade-up-delay {
+    animation: none;
+  }
+}

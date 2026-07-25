@@ -1,0 +1,3 @@
+-- Full demo diary for Anna (owner a1111111-1111-4111-8111-111111111111)
+-- Prefer Settings → "Load demo data" on the Admin app (calls /api/seed-demo).
+-- This SQL is a backup reference only; the API seed is richer and safer to re-run.
