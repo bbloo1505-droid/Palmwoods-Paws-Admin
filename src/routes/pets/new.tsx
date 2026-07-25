@@ -1,7 +1,7 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
-import { Button, Field, PageHeader, inputClassName } from "@/components/ui";
+import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
 import { listClients, upsertPet } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Client } from "@/lib/types";
@@ -60,13 +60,24 @@ function NewPetPage() {
   return (
     <div className="mx-auto max-w-2xl">
       <PageHeader title="New pet" subtitle="Start with the essentials — you can fill the rest later." />
-      <form className="grid gap-4" onSubmit={(e) => void onSubmit(e)}>
+      {clients.length === 0 ? (
+        <Card className="space-y-3">
+          <p className="text-sm text-olive-950">
+            Add a client first, then you can attach their pet.
+          </p>
+          <Link to="/clients/new">
+            <Button variant="gold">New client</Button>
+          </Link>
+        </Card>
+      ) : null}
+      <form className="mt-4 grid gap-4" onSubmit={(e) => void onSubmit(e)}>
         <Field label="Client">
           <select
             className={inputClassName()}
             required
             value={form.client_id}
             onChange={(e) => setForm({ ...form, client_id: e.target.value })}
+            disabled={clients.length === 0}
           >
             <option value="">Select client…</option>
             {clients.map((c) => (

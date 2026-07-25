@@ -1,9 +1,16 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { Plus } from "lucide-react";
 import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
-import { getClient, getHouseInfo, listPets, upsertClient, upsertHouseInfo } from "@/lib/api";
+import {
+  deleteClient,
+  getClient,
+  getHouseInfo,
+  listPets,
+  upsertClient,
+  upsertHouseInfo,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Client, HouseInfo, Pet } from "@/lib/types";
 
@@ -14,6 +21,7 @@ export const Route = createFileRoute("/clients/$clientId")({
 function ClientDetailPage() {
   const { clientId } = Route.useParams();
   const { ownerId } = useAuth();
+  const navigate = useNavigate();
   const [client, setClient] = useState<Client | null>(null);
   const [house, setHouse] = useState<Partial<HouseInfo>>({});
   const [pets, setPets] = useState<Pet[]>([]);
@@ -58,6 +66,30 @@ function ClientDetailPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save failed");
     } finally {
+      setBusy(false);
+    }
+  };
+
+  const onDeleteClient = async () => {
+    if (!client) return;
+    const petNote =
+      pets.length > 0
+        ? `\n\nThis will also remove ${pets.length} pet${pets.length === 1 ? "" : "s"} and related bookings where the database allows.`
+        : "";
+    if (
+      !window.confirm(
+        `Delete client ${client.name}?${petNote}\n\nThis can’t be undone.`,
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteClient(client.id);
+      void navigate({ to: "/clients" });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete client");
       setBusy(false);
     }
   };
@@ -211,27 +243,56 @@ function ClientDetailPage() {
       </div>
 
       <section>
-        <h2 className="mb-3 font-display text-xl">Pets ({pets.length})</h2>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {pets.map((pet) => (
-            <Link key={pet.id} to="/pets/$petId" params={{ petId: pet.id }}>
-              <Card className="flex items-center gap-3 transition hover:border-olive-700/30">
-                <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-olive-100">
-                  {pet.photo_url ? (
-                    <img src={pet.photo_url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span>🐶</span>
-                  )}
-                </div>
-                <div>
-                  <p className="font-semibold text-olive-950">{pet.name}</p>
-                  <p className="text-sm text-muted">{pet.breed || pet.species}</p>
-                </div>
-              </Card>
-            </Link>
-          ))}
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-display text-xl">Pets ({pets.length})</h2>
+          <Link to="/pets/new" search={{ clientId }}>
+            <Button variant="secondary" size="sm">
+              <Plus className="h-4 w-4" />
+              Add pet
+            </Button>
+          </Link>
         </div>
+        {pets.length === 0 ? (
+          <Card className="text-sm text-muted">
+            No pets yet.{" "}
+            <Link to="/pets/new" search={{ clientId }} className="font-semibold text-olive-800 underline-offset-2 hover:underline">
+              Add their first pet
+            </Link>
+            .
+          </Card>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {pets.map((pet) => (
+              <Link key={pet.id} to="/pets/$petId" params={{ petId: pet.id }}>
+                <Card className="flex items-center gap-3 transition hover:border-olive-700/30">
+                  <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-full bg-olive-100">
+                    {pet.photo_url ? (
+                      <img src={pet.photo_url} alt="" className="h-full w-full object-cover" />
+                    ) : (
+                      <span>🐶</span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="font-semibold text-olive-950">{pet.name}</p>
+                    <p className="text-sm text-muted">{pet.breed || pet.species}</p>
+                  </div>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        )}
       </section>
+
+      <Card className="space-y-3 border-danger/20">
+        <h2 className="font-display text-xl text-olive-950">Delete client</h2>
+        <p className="text-sm text-muted">
+          Removes this household from your list. Pets linked to them are removed too when the
+          database allows. This can’t be undone.
+        </p>
+        <Button type="button" variant="danger" disabled={busy} onClick={() => void onDeleteClient()}>
+          {busy ? "Deleting…" : `Delete ${client.name}`}
+        </Button>
+      </Card>
     </div>
   );
 }

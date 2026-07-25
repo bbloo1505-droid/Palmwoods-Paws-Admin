@@ -91,7 +91,13 @@ export async function upsertClient(
 
 export async function deleteClient(id: string) {
   const { error } = await supabase.from("clients").delete().eq("id", id);
-  if (error) throw error;
+  if (error) {
+    throw new Error(
+      error.message.includes("foreign key") || error.code === "23503"
+        ? "Couldn’t delete this client — something still references them. Remove linked bookings/invoices first, or try again."
+        : error.message,
+    );
+  }
 }
 
 export async function getHouseInfo(clientId: string) {
@@ -154,7 +160,13 @@ export async function upsertPet(
 
 export async function deletePet(id: string) {
   const { error } = await supabase.from("pets").delete().eq("id", id);
-  if (error) throw error;
+  if (error) {
+    throw new Error(
+      error.message.includes("foreign key") || error.code === "23503"
+        ? "Couldn’t delete this pet — something still references them. Cancel linked bookings first, or try again."
+        : error.message,
+    );
+  }
 }
 
 export async function listBookingsBetween(from: Date, to: Date) {
