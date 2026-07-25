@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Camera, Mic, Share2, Trash2, Video } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
+import { Button, Card, Field, inputClassName } from "@/components/ui";
 import {
   deletePawReportMedia,
   getOrCreatePawReport,
@@ -175,22 +175,32 @@ function PawReportComposePage() {
   const mediaBusy = busy || Boolean(uploading);
 
   return (
-    <div className="mx-auto max-w-xl space-y-4">
-      <PageHeader
-        title={`${walk.pet?.name ?? "Walk"}'s Walk`}
-        subtitle={[
-          formatDuration(walk.duration_sec),
-          Number(walk.distance_m) > 0 ? formatDistanceKm(walk.distance_m) : null,
-          walk.suburb || walk.client?.suburb || "Palmwoods",
-        ]
-          .filter(Boolean)
-          .join(" · ")}
-      />
+    <div className="mx-auto max-w-xl space-y-4 pb-28">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-dark">
+          Step 3 of 3 · Paw Report
+        </p>
+        <h1 className="mt-1 font-display text-3xl text-olive-950">
+          Send {walk.pet?.name ?? "the walk"} home
+        </h1>
+        <p className="mt-1 text-sm text-muted">
+          {[
+            formatDuration(walk.duration_sec),
+            Number(walk.distance_m) > 0 ? formatDistanceKm(walk.distance_m) : null,
+            walk.suburb || walk.client?.suburb || null,
+          ]
+            .filter(Boolean)
+            .join(" · ")}
+          {" · "}
+          Pick mood, check the note, then send to the owner.
+        </p>
+      </div>
 
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
       <Card>
-        <h3 className="mb-3 font-display text-lg">How was {walk.pet?.name}?</h3>
+        <h3 className="mb-1 font-display text-lg">1. How was {walk.pet?.name}?</h3>
+        <p className="mb-3 text-sm text-muted">Tap one mood</p>
         <div className="grid grid-cols-2 gap-2">
           {MOOD_OPTIONS.map((m) => (
             <button
@@ -198,7 +208,7 @@ function PawReportComposePage() {
               type="button"
               onClick={() => void setMood(m.value)}
               className={cn(
-                "rounded-xl border px-3 py-3 text-left text-sm font-medium",
+                "min-h-14 rounded-xl border px-3 py-3 text-left text-sm font-medium active:scale-[0.98]",
                 report.mood === m.value
                   ? "border-olive-800 bg-olive-800 text-warm-white"
                   : "border-olive-100 bg-cream",
@@ -212,13 +222,13 @@ function PawReportComposePage() {
       </Card>
 
       <Card>
-        <h3 className="mb-3 font-display text-lg">Toilet</h3>
+        <h3 className="mb-3 font-display text-lg">2. Toilet break?</h3>
         <div className="flex gap-2">
           <button
             type="button"
             onClick={() => void toggleToilet("toilet_poo")}
             className={cn(
-              "flex-1 rounded-xl border px-3 py-3 font-medium",
+              "min-h-14 flex-1 rounded-xl border px-3 py-3 text-base font-medium",
               report.toilet_poo ? "border-olive-800 bg-olive-800 text-warm-white" : "border-olive-100 bg-cream",
             )}
           >
@@ -228,7 +238,7 @@ function PawReportComposePage() {
             type="button"
             onClick={() => void toggleToilet("toilet_wee")}
             className={cn(
-              "flex-1 rounded-xl border px-3 py-3 font-medium",
+              "min-h-14 flex-1 rounded-xl border px-3 py-3 text-base font-medium",
               report.toilet_wee ? "border-olive-800 bg-olive-800 text-warm-white" : "border-olive-100 bg-cream",
             )}
           >
@@ -238,8 +248,11 @@ function PawReportComposePage() {
       </Card>
 
       <Card className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="font-display text-lg">Anything to mention?</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="font-display text-lg">3. Note for the owner</h3>
+            <p className="text-sm text-muted">Type or dictate, then polish</p>
+          </div>
           <Button type="button" size="sm" variant="secondary" onClick={onDictate}>
             <Mic className="h-4 w-4" />
             {listening ? "Listening…" : "Dictate"}
@@ -247,18 +260,24 @@ function PawReportComposePage() {
         </div>
         <Field label="Rough note">
           <textarea
-            className={inputClassName("min-h-28")}
+            className={inputClassName("min-h-28 text-base")}
             value={rawNote}
             onChange={(e) => setRawNote(e.target.value)}
             placeholder={`${walk.pet?.name} was really energetic today…`}
           />
         </Field>
-        <Button type="button" variant="secondary" disabled={mediaBusy} onClick={() => void onPolish()}>
+        <Button
+          type="button"
+          variant="secondary"
+          className="min-h-12 w-full"
+          disabled={mediaBusy}
+          onClick={() => void onPolish()}
+        >
           Polish into Paw Report
         </Button>
-        <Field label="Owner-facing update">
+        <Field label="What the owner will read">
           <textarea
-            className={inputClassName("min-h-40")}
+            className={inputClassName("min-h-36 text-base")}
             value={preview}
             onChange={(e) => setPreview(e.target.value)}
           />
@@ -267,9 +286,9 @@ function PawReportComposePage() {
 
       <Card className="space-y-4">
         <div>
-          <h3 className="font-display text-lg">Photos &amp; video</h3>
+          <h3 className="font-display text-lg">4. Photos &amp; video</h3>
           <p className="mt-1 text-sm text-muted">
-            Add snaps and a short face-cam clip for the owner page.
+            Add or swap snaps for the owner page.
             {photoCount || videoCount
               ? ` ${photoCount} photo${photoCount === 1 ? "" : "s"} · ${videoCount} video${
                   videoCount === 1 ? "" : "s"
@@ -284,29 +303,19 @@ function PawReportComposePage() {
             variant="gold"
             className="min-h-12"
             disabled={mediaBusy}
-            onClick={() => photoLibraryRef.current?.click()}
-          >
-            <Camera className="h-4 w-4" />
-            {uploading === "photo" ? "Uploading…" : "Add photos"}
-          </Button>
-          <Button
-            type="button"
-            variant="secondary"
-            className="min-h-12"
-            disabled={mediaBusy}
             onClick={() => photoCameraRef.current?.click()}
           >
-            Take photo
+            <Camera className="h-4 w-4" />
+            {uploading === "photo" ? "Uploading…" : "Take photo"}
           </Button>
           <Button
             type="button"
             variant="secondary"
             className="min-h-12"
             disabled={mediaBusy}
-            onClick={() => videoLibraryRef.current?.click()}
+            onClick={() => photoLibraryRef.current?.click()}
           >
-            <Video className="h-4 w-4" />
-            {uploading === "video" ? "Uploading…" : "Add video"}
+            From gallery
           </Button>
           <Button
             type="button"
@@ -315,7 +324,17 @@ function PawReportComposePage() {
             disabled={mediaBusy}
             onClick={() => videoCameraRef.current?.click()}
           >
-            Record video
+            <Video className="h-4 w-4" />
+            {uploading === "video" ? "Uploading…" : "Record video"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            className="min-h-12"
+            disabled={mediaBusy}
+            onClick={() => videoLibraryRef.current?.click()}
+          >
+            Add video
           </Button>
         </div>
 
@@ -395,37 +414,55 @@ function PawReportComposePage() {
             <p className="text-sm text-muted">Report is ready. Share the link below if needed.</p>
           )}
           <p className="break-all text-sm text-muted">{shareUrl}</p>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Link to="/pawreport/$token" params={{ token: report.public_token }} className="flex-1">
-              <Button className="w-full" variant="gold">
+          <div className="flex flex-col gap-2">
+            <Link to="/pawreport/$token" params={{ token: report.public_token }}>
+              <Button className="w-full min-h-12" variant="gold">
                 View owner page
               </Button>
             </Link>
             <Button
-              className="flex-1"
+              className="w-full min-h-12"
               variant="secondary"
               onClick={() => void navigator.clipboard?.writeText(shareUrl)}
             >
               <Share2 className="h-4 w-4" />
               Copy link
             </Button>
-          </div>
-          {ownerPhone ? (
-            <a
-              href={`sms:${ownerPhone.replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(
-                `${walk.pet?.name ?? "Your dog"}'s Paw Report is ready ${shareUrl}`,
-              )}`}
-            >
-              <Button className="w-full" variant="secondary">
-                Also text owner
+            {ownerPhone ? (
+              <a
+                href={`sms:${ownerPhone.replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(
+                  `${walk.pet?.name ?? "Your dog"}'s Paw Report is ready ${shareUrl}`,
+                )}`}
+              >
+                <Button className="w-full min-h-12" variant="secondary">
+                  Also text owner
+                </Button>
+              </a>
+            ) : null}
+            <Link to="/">
+              <Button className="w-full min-h-12" variant="ghost">
+                Back to Today
               </Button>
-            </a>
-          ) : null}
+            </Link>
+          </div>
         </Card>
       ) : (
-        <Button className="w-full min-h-14" size="lg" variant="gold" disabled={mediaBusy} onClick={() => void onSend()}>
-          {busy ? "Sending to owner…" : "Send Paw Report"}
-        </Button>
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-olive-100 bg-warm-white/95 px-4 py-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
+          <div className="mx-auto max-w-xl space-y-1 pb-[env(safe-area-inset-bottom)] md:pb-0">
+            <Button
+              className="w-full min-h-14 text-base"
+              size="lg"
+              variant="gold"
+              disabled={mediaBusy}
+              onClick={() => void onSend()}
+            >
+              {busy ? "Sending to owner…" : "Send Paw Report to owner"}
+            </Button>
+            <p className="text-center text-xs text-muted">
+              Emails the private link{walk.client?.email ? ` to ${walk.client.email}` : ""}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   );

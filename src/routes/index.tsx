@@ -11,7 +11,7 @@ import {
   listTodaysBookings,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { BookingWithRelations } from "@/lib/types";
+import { isWalkService, type BookingWithRelations } from "@/lib/types";
 
 export const Route = createFileRoute("/")({
   component: DashboardPage,
@@ -105,7 +105,38 @@ function DashboardPage() {
       {error ? <p className="text-sm text-danger">{error}</p> : null}
       {loading ? <p className="text-muted">Loading today…</p> : null}
 
+      {!loading && jobs.some((j) => isWalkService(j.service_type)) ? (
+        <Card className="space-y-3 bg-olive-800 p-4 text-warm-white sm:p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold">
+            How walks work
+          </p>
+          <ol className="space-y-2 text-sm leading-snug text-warm-white/90">
+            <li>
+              <span className="font-semibold text-gold">1.</span> Tap{" "}
+              <span className="font-semibold">Start walk</span> on a job below
+            </li>
+            <li>
+              <span className="font-semibold text-gold">2.</span> Add photos or a short video while
+              you&apos;re out
+            </li>
+            <li>
+              <span className="font-semibold text-gold">3.</span> Tap{" "}
+              <span className="font-semibold">Finish walk</span>, then{" "}
+              <span className="font-semibold">Send Paw Report</span> to the owner
+            </li>
+          </ol>
+        </Card>
+      ) : null}
+
       <section className="space-y-3">
+        <div className="flex items-end justify-between gap-2">
+          <h2 className="font-display text-xl text-olive-950">Today&apos;s jobs</h2>
+          {jobs.length > 0 ? (
+            <p className="text-sm text-muted">
+              {jobs.length} job{jobs.length === 1 ? "" : "s"}
+            </p>
+          ) : null}
+        </div>
         {jobs.length === 0 && !loading ? (
           <EmptyState
             title="No jobs today"

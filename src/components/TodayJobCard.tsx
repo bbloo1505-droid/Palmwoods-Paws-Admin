@@ -29,12 +29,8 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
   const visitDone = visit?.status === "completed";
   const visitInProgress = visit?.status === "in_progress";
   const walkInProgress = Boolean(activeWalkId);
-  const done = walkService ? false : visitDone; // walks complete via Paw Report path
+  const done = walkService ? false : visitDone;
   const inProgress = walkService ? walkInProgress : visitInProgress;
-
-  const subtitle = walkService
-    ? `${SERVICE_LABELS[booking.service_type]} · Paw Report`
-    : SERVICE_LABELS[booking.service_type];
 
   const onStart = async () => {
     if (!ownerId) return;
@@ -62,10 +58,20 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
     }
   };
 
+  const ctaLabel = busy
+    ? "Starting…"
+    : inProgress
+      ? walkService
+        ? "Continue walk"
+        : "Continue visit"
+      : walkService
+        ? "Start walk"
+        : "Start visit";
+
   return (
     <Card className="space-y-3 p-4 sm:p-5">
       <div className="flex items-start gap-3">
-        <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-olive-100 text-2xl">
+        <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-olive-100 text-2xl">
           {booking.pet?.photo_url ? (
             <img src={booking.pet.photo_url} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -76,52 +82,59 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
           <p className="text-sm font-semibold uppercase tracking-[0.14em] text-gold-dark">
             {format(new Date(booking.starts_at), "h:mm a")}
           </p>
-          <h3 className="font-display text-2xl text-olive-950">
-            {booking.pet?.name ?? "Pet"}{" "}
-            <span className="text-xl" aria-hidden="true">
-              {petEmoji(booking.pet?.species)}
-            </span>
+          <h3 className="font-display text-2xl leading-tight text-olive-950">
+            {booking.pet?.name ?? "Pet"}
           </h3>
-          <p className="text-sm text-muted">{subtitle}</p>
+          <p className="text-sm text-muted">{SERVICE_LABELS[booking.service_type]}</p>
           <p className="mt-1 flex items-center gap-1 text-sm text-muted">
             <MapPin className="h-3.5 w-3.5 shrink-0" />
-            {booking.client?.suburb || booking.client?.address || "Location TBC"}
+            <span className="truncate">
+              {booking.client?.suburb || booking.client?.address || "Location TBC"}
+            </span>
           </p>
         </div>
       </div>
 
+      {walkService && !done ? (
+        <p className="rounded-xl bg-cream/90 px-3 py-2 text-sm leading-snug text-olive-900">
+          {inProgress ? (
+            <>
+              <span className="font-semibold">In progress.</span> Add photos, then finish to send the
+              Paw Report.
+            </>
+          ) : (
+            <>
+              <span className="font-semibold">Walk tip:</span> Start → photos/video on the walk →
+              Finish → send Paw Report to owner.
+            </>
+          )}
+        </p>
+      ) : null}
+
       {error ? <p className="text-sm text-danger">{error}</p> : null}
 
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2">
         {done ? (
-          <span className="inline-flex rounded-full bg-success/15 px-3 py-2 text-sm font-semibold text-success">
+          <span className="inline-flex justify-center rounded-full bg-success/15 px-3 py-3 text-sm font-semibold text-success">
             Done
           </span>
         ) : (
           <Button
-            className={cn("w-full sm:flex-1", "min-h-14 text-base tracking-wide")}
+            className={cn("w-full min-h-14 text-base")}
             size="lg"
             variant="gold"
             disabled={busy}
             onClick={() => void onStart()}
           >
-            {busy
-              ? "Starting…"
-              : inProgress
-                ? walkService
-                  ? "Continue Walk"
-                  : "Continue Visit"
-                : walkService
-                  ? "Start Walk"
-                  : "Start Visit"}
+            {ctaLabel}
           </Button>
         )}
         <Link
           to="/bookings/$bookingId"
           params={{ bookingId: booking.id }}
-          className="text-center text-sm font-semibold text-olive-800 sm:px-3"
+          className="py-1 text-center text-sm font-semibold text-olive-800"
         >
-          Details
+          Job details
         </Link>
       </div>
     </Card>

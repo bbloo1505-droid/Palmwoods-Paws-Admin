@@ -84,6 +84,9 @@ export function AppShell({ children }: { children: ReactNode }) {
     return pathname === to || pathname.startsWith(`${to}/`);
   };
 
+  // Full-focus mode on walk + Paw Report screens (more thumb room on phones).
+  const focusMode = pathname.startsWith("/walks/");
+
   return (
     <div className="min-h-dvh bg-cream md:flex">
       <aside className="hidden w-64 shrink-0 flex-col bg-olive-800 text-warm-white md:flex">
@@ -181,29 +184,38 @@ export function AppShell({ children }: { children: ReactNode }) {
           </Link>
         </header>
 
-        <main className="flex-1 px-4 py-5 pb-24 md:px-8 md:pb-8">{children}</main>
+        <main
+          className={cn(
+            "flex-1 px-4 py-5 md:px-8 md:pb-8",
+            focusMode ? "pb-[max(1.25rem,env(safe-area-inset-bottom))]" : "pb-24",
+          )}
+        >
+          {children}
+        </main>
 
-        <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-olive-100 bg-warm-white px-2 pb-[env(safe-area-inset-bottom)] md:hidden">
-          <div className="grid grid-cols-5 gap-1 py-2">
-            {mobileNav.map((item) => {
-              const Icon = item.icon;
-              const active = isActive(item.to);
-              return (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className={cn(
-                    "flex flex-col items-center gap-1 rounded-xl px-1 py-2 text-[11px] font-medium",
-                    active ? "text-olive-800" : "text-muted",
-                  )}
-                >
-                  <Icon className={cn("h-5 w-5", active && "text-gold-dark")} />
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
+        {!focusMode ? (
+          <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-olive-100 bg-warm-white px-2 pb-[env(safe-area-inset-bottom)] md:hidden">
+            <div className="grid grid-cols-5 gap-1 py-2">
+              {mobileNav.map((item) => {
+                const Icon = item.icon;
+                const active = isActive(item.to);
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className={cn(
+                      "flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 py-1.5 text-[11px] font-medium",
+                      active ? "text-olive-800" : "text-muted",
+                    )}
+                  >
+                    <Icon className={cn("h-5 w-5", active && "text-gold-dark")} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        ) : null}
       </div>
     </div>
   );
