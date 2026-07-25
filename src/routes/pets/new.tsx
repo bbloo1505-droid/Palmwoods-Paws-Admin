@@ -17,7 +17,7 @@ export const Route = createFileRoute("/pets/new")({
 });
 
 function NewPetPage() {
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const navigate = useNavigate();
   const { clientId: presetClientId } = Route.useSearch();
   const [clients, setClients] = useState<Client[]>([]);
@@ -44,11 +44,11 @@ function NewPetPage() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!ownerId) return;
     setBusy(true);
     setError(null);
     try {
-      const pet = await upsertPet(user.id, form);
+      const pet = await upsertPet(ownerId, form);
       void navigate({ to: "/pets/$petId", params: { petId: pet.id } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save pet");
@@ -133,3 +133,4 @@ function NewPetPage() {
     </div>
   );
 }
+

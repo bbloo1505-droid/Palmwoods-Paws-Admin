@@ -1,11 +1,12 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import type { FormEvent } from "react";
 import { useEffect, useState } from "react";
 import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
-import { getClient, getPet, upsertPet } from "@/lib/api";
+import { getClient, getPet, listPetWalkStats, startWalk, upsertPet } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { Client, Pet } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
+import { format } from "date-fns";
 
 export const Route = createFileRoute("/pets/$petId")({
   component: PetDetailPage,
@@ -13,9 +14,11 @@ export const Route = createFileRoute("/pets/$petId")({
 
 function PetDetailPage() {
   const { petId } = Route.useParams();
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
+  const navigate = useNavigate();
   const [pet, setPet] = useState<Pet | null>(null);
   const [client, setClient] = useState<Client | null>(null);
+  const [stats, setStats] = useState<Awaited<ReturnType<typeof listPetWalkStats>> | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -24,19 +27,42 @@ function PetDetailPage() {
     getPet(petId)
       .then(async (p) => {
         setPet(p);
-        const c = await getClient(p.client_id);
+        const [c, s] = await Promise.all([getClient(p.client_id), listPetWalkStats(p.id)]);
         setClient(c);
+        setStats(s);
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load pet"));
   }, [petId]);
 
+  const onStartWalk = async () => {
+    if (!pet || !ownerId || !client) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const walk = await startWalk(ownerId, {
+        pet_id: pet.id,
+        client_id: client.id,
+        suburb: client.suburb,
+      });
+      void navigate({ to: "/walks/$walkId", params: { walkId: walk.id } });
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `${err.message}. Run the Paw Reports SQL migration if tables are missing.`
+          : "Could not start walk",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const save = async (e: FormEvent) => {
     e.preventDefault();
-    if (!pet || !user) return;
+    if (!pet || !ownerId) return;
     setBusy(true);
     setMessage(null);
     try {
-      const saved = await upsertPet(user.id, pet, pet.id);
+      const saved = await upsertPet(ownerId, pet, pet.id);
       setPet(saved);
       setMessage("Pet profile saved");
     } catch (err) {
@@ -47,17 +73,17 @@ function PetDetailPage() {
   };
 
   const onPhoto = async (file: File | null) => {
-    if (!file || !user || !pet) return;
+    if (!file || !ownerId || !pet) return;
     setBusy(true);
     try {
       const ext = file.name.split(".").pop() || "jpg";
-      const path = `${user.id}/${pet.id}.${ext}`;
+      const path = `${ownerId}/${pet.id}.${ext}`;
       const { error: upErr } = await supabase.storage
         .from("pet-avatars")
         .upload(path, file, { upsert: true });
       if (upErr) throw upErr;
       const { data } = supabase.storage.from("pet-avatars").getPublicUrl(path);
-      const saved = await upsertPet(user.id, { ...pet, photo_url: data.publicUrl }, pet.id);
+      const saved = await upsertPet(ownerId, { ...pet, photo_url: data.publicUrl }, pet.id);
       setPet(saved);
       setMessage("Photo updated");
     } catch (err) {
@@ -76,15 +102,38 @@ function PetDetailPage() {
         title={pet.name}
         subtitle={client ? `With ${client.name}` : pet.breed || pet.species}
         action={
-          client ? (
-            <Link to="/clients/$clientId" params={{ clientId: client.id }}>
-              <Button variant="secondary">View client</Button>
-            </Link>
-          ) : null
+          <Button variant="gold" size="lg" disabled={busy || !client} onClick={() => void onStartWalk()}>
+            {busy ? "Starting…" : "Start Walk"}
+          </Button>
         }
       />
       {message ? <p className="text-sm text-success">{message}</p> : null}
       {error ? <p className="text-sm text-danger">{error}</p> : null}
+
+      {stats ? (
+        <Card className="grid grid-cols-3 gap-3 text-center">
+          <div>
+            <p className="font-display text-2xl text-olive-950">{stats.adventureCount}</p>
+            <p className="text-xs text-muted">Adventures</p>
+          </div>
+          <div>
+            <p className="font-display text-2xl text-olive-950">{stats.totalKm.toFixed(1)}</p>
+            <p className="text-xs text-muted">km explored</p>
+          </div>
+          <div>
+            <p className="font-display text-lg text-olive-950">
+              {stats.lastWalkAt ? format(new Date(stats.lastWalkAt), "d MMM") : "—"}
+            </p>
+            <p className="text-xs text-muted">Last walked</p>
+          </div>
+        </Card>
+      ) : null}
+
+      {client ? (
+        <Link to="/clients/$clientId" params={{ clientId: client.id }} className="text-sm font-semibold text-olive-800">
+          View client & house info →
+        </Link>
+      ) : null}
 
       <Card className="flex flex-col gap-4 sm:flex-row sm:items-center">
         <div className="h-28 w-28 overflow-hidden rounded-2xl bg-olive-100">
@@ -188,3 +237,4 @@ function PetDetailPage() {
     </div>
   );
 }
+

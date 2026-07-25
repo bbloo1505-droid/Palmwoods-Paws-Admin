@@ -4,25 +4,18 @@ import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/lib/auth";
 
 function RootComponent() {
-  const { user, loading, configured } = useAuth();
+  const { loading, authDisabled } = useAuth();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isLogin = pathname === "/login";
+  const isPublicCustomer =
+    pathname.startsWith("/pawreport/") || pathname === "/my-paws";
 
   useEffect(() => {
-    if (loading) return;
-    if (!configured && !isLogin) {
-      // Allow browsing login screen even without env; show setup message there
-      navigate({ to: "/login" });
-      return;
-    }
-    if (!user && !isLogin) {
-      navigate({ to: "/login" });
-    }
-    if (user && isLogin) {
+    if (authDisabled && isLogin) {
       navigate({ to: "/" });
     }
-  }, [user, loading, configured, isLogin, navigate]);
+  }, [authDisabled, isLogin, navigate]);
 
   if (loading) {
     return (
@@ -32,12 +25,8 @@ function RootComponent() {
     );
   }
 
-  if (isLogin) {
+  if (isPublicCustomer || (isLogin && !authDisabled)) {
     return <Outlet />;
-  }
-
-  if (!user) {
-    return null;
   }
 
   return (

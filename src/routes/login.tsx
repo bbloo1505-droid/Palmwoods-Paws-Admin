@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type { FormEvent } from "react";
 import { useState } from "react";
-import { PawPrint } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { LOGO_SRC } from "@/lib/brand";
 import { Button, Field, inputClassName } from "@/components/ui";
 
 export const Route = createFileRoute("/login")({
@@ -42,10 +42,12 @@ function LoginPage() {
     <div className="grid min-h-dvh place-items-center bg-olive-800 px-4 py-10">
       <div className="w-full max-w-md rounded-3xl bg-warm-white p-6 shadow-xl md:p-8">
         <div className="mb-6 text-center">
-          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-olive-800 text-gold">
-            <PawPrint className="h-6 w-6" />
-          </div>
-          <h1 className="font-display text-3xl text-olive-950">Palmwoods Paws Ops</h1>
+          <img
+            src={LOGO_SRC}
+            alt="Palmwoods Paws"
+            className="mx-auto mb-3 h-16 w-auto object-contain"
+          />
+          <h1 className="font-display text-3xl text-olive-950">Ops</h1>
           <p className="mt-1 text-muted">Anna&apos;s daily operating system</p>
         </div>
 

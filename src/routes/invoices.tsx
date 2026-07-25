@@ -15,7 +15,7 @@ export const Route = createFileRoute("/invoices")({
 type InvoiceRow = Invoice & { client: Pick<Client, "id" | "name"> | null };
 
 function InvoicesPage() {
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const [rows, setRows] = useState<InvoiceRow[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -45,10 +45,10 @@ function InvoicesPage() {
 
   const onCreate = async (e: FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!ownerId) return;
     setBusy(true);
     try {
-      await createInvoice(user.id, {
+      await createInvoice(ownerId, {
         client_id: form.client_id,
         amount: Number(form.amount),
         notes: form.notes,
@@ -182,3 +182,4 @@ function InvoicesPage() {
     </div>
   );
 }
+

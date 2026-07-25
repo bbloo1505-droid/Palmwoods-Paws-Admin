@@ -13,7 +13,7 @@ export const Route = createFileRoute("/clients/$clientId")({
 
 function ClientDetailPage() {
   const { clientId } = Route.useParams();
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const [client, setClient] = useState<Client | null>(null);
   const [house, setHouse] = useState<Partial<HouseInfo>>({});
   const [pets, setPets] = useState<Pet[]>([]);
@@ -33,11 +33,11 @@ function ClientDetailPage() {
 
   const saveClient = async (e: FormEvent) => {
     e.preventDefault();
-    if (!client || !user) return;
+    if (!client || !ownerId) return;
     setBusy(true);
     setMessage(null);
     try {
-      const saved = await upsertClient(user.id, client, client.id);
+      const saved = await upsertClient(ownerId, client, client.id);
       setClient(saved);
       setMessage("Client saved");
     } catch (err) {
@@ -235,3 +235,4 @@ function ClientDetailPage() {
     </div>
   );
 }
+

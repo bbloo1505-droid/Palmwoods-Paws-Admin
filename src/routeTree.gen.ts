@@ -15,17 +15,21 @@ import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MoreRouteImport } from './routes/more'
+import { Route as MyPawsRouteImport } from './routes/my-paws'
 import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as BookingsBookingIdRouteImport } from './routes/bookings/$bookingId'
 import { Route as ClientsIndexRouteImport } from './routes/clients/index'
 import { Route as ClientsClientIdRouteImport } from './routes/clients/$clientId'
 import { Route as ClientsNewRouteImport } from './routes/clients/new'
+import { Route as PawreportTokenRouteImport } from './routes/pawreport/$token'
 import { Route as PetsIndexRouteImport } from './routes/pets/index'
 import { Route as PetsPetIdRouteImport } from './routes/pets/$petId'
 import { Route as PetsNewRouteImport } from './routes/pets/new'
 import { Route as VisitsIndexRouteImport } from './routes/visits/index'
 import { Route as VisitsVisitIdRouteImport } from './routes/visits/$visitId'
+import { Route as WalksWalkIdRouteImport } from './routes/walks/$walkId'
+import { Route as WalksWalkIdReportRouteImport } from './routes/walks/$walkId.report'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -55,6 +59,11 @@ const MessagesRoute = MessagesRouteImport.update({
 const MoreRoute = MoreRouteImport.update({
   id: '/more',
   path: '/more',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MyPawsRoute = MyPawsRouteImport.update({
+  id: '/my-paws',
+  path: '/my-paws',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsRoute = ReportsRouteImport.update({
@@ -87,6 +96,11 @@ const ClientsNewRoute = ClientsNewRouteImport.update({
   path: '/clients/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PawreportTokenRoute = PawreportTokenRouteImport.update({
+  id: '/pawreport/$token',
+  path: '/pawreport/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PetsIndexRoute = PetsIndexRouteImport.update({
   id: '/pets/',
   path: '/pets/',
@@ -112,6 +126,16 @@ const VisitsVisitIdRoute = VisitsVisitIdRouteImport.update({
   path: '/visits/$visitId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WalksWalkIdRoute = WalksWalkIdRouteImport.update({
+  id: '/walks/$walkId',
+  path: '/walks/$walkId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WalksWalkIdReportRoute = WalksWalkIdReportRouteImport.update({
+  id: '/report',
+  path: '/report',
+  getParentRoute: () => WalksWalkIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -120,17 +144,21 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
+  '/my-paws': typeof MyPawsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
+  '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
   '/visits/$visitId': typeof VisitsVisitIdRoute
+  '/walks/$walkId': typeof WalksWalkIdRouteWithChildren
   '/clients/': typeof ClientsIndexRoute
   '/pets/': typeof PetsIndexRoute
   '/visits/': typeof VisitsIndexRoute
+  '/walks/$walkId/report': typeof WalksWalkIdReportRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -139,17 +167,21 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
+  '/my-paws': typeof MyPawsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
+  '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
   '/visits/$visitId': typeof VisitsVisitIdRoute
+  '/walks/$walkId': typeof WalksWalkIdRouteWithChildren
   '/clients': typeof ClientsIndexRoute
   '/pets': typeof PetsIndexRoute
   '/visits': typeof VisitsIndexRoute
+  '/walks/$walkId/report': typeof WalksWalkIdReportRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -159,17 +191,21 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
+  '/my-paws': typeof MyPawsRoute
   '/reports': typeof ReportsRoute
   '/settings': typeof SettingsRoute
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
+  '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
   '/visits/$visitId': typeof VisitsVisitIdRoute
+  '/walks/$walkId': typeof WalksWalkIdRouteWithChildren
   '/clients/': typeof ClientsIndexRoute
   '/pets/': typeof PetsIndexRoute
   '/visits/': typeof VisitsIndexRoute
+  '/walks/$walkId/report': typeof WalksWalkIdReportRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -180,17 +216,21 @@ export interface FileRouteTypes {
     | '/login'
     | '/messages'
     | '/more'
+    | '/my-paws'
     | '/reports'
     | '/settings'
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
+    | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
     | '/visits/$visitId'
+    | '/walks/$walkId'
     | '/clients/'
     | '/pets/'
     | '/visits/'
+    | '/walks/$walkId/report'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,17 +239,21 @@ export interface FileRouteTypes {
     | '/login'
     | '/messages'
     | '/more'
+    | '/my-paws'
     | '/reports'
     | '/settings'
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
+    | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
     | '/visits/$visitId'
+    | '/walks/$walkId'
     | '/clients'
     | '/pets'
     | '/visits'
+    | '/walks/$walkId/report'
   id:
     | '__root__'
     | '/'
@@ -218,17 +262,21 @@ export interface FileRouteTypes {
     | '/login'
     | '/messages'
     | '/more'
+    | '/my-paws'
     | '/reports'
     | '/settings'
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
+    | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
     | '/visits/$visitId'
+    | '/walks/$walkId'
     | '/clients/'
     | '/pets/'
     | '/visits/'
+    | '/walks/$walkId/report'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -238,14 +286,17 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MessagesRoute: typeof MessagesRoute
   MoreRoute: typeof MoreRoute
+  MyPawsRoute: typeof MyPawsRoute
   ReportsRoute: typeof ReportsRoute
   SettingsRoute: typeof SettingsRoute
   BookingsBookingIdRoute: typeof BookingsBookingIdRoute
   ClientsClientIdRoute: typeof ClientsClientIdRoute
   ClientsNewRoute: typeof ClientsNewRoute
+  PawreportTokenRoute: typeof PawreportTokenRoute
   PetsPetIdRoute: typeof PetsPetIdRoute
   PetsNewRoute: typeof PetsNewRoute
   VisitsVisitIdRoute: typeof VisitsVisitIdRoute
+  WalksWalkIdRoute: typeof WalksWalkIdRouteWithChildren
   ClientsIndexRoute: typeof ClientsIndexRoute
   PetsIndexRoute: typeof PetsIndexRoute
   VisitsIndexRoute: typeof VisitsIndexRoute
@@ -295,6 +346,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MoreRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/my-paws': {
+      id: '/my-paws'
+      path: '/my-paws'
+      fullPath: '/my-paws'
+      preLoaderRoute: typeof MyPawsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports': {
       id: '/reports'
       path: '/reports'
@@ -337,6 +395,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/pawreport/$token': {
+      id: '/pawreport/$token'
+      path: '/pawreport/$token'
+      fullPath: '/pawreport/$token'
+      preLoaderRoute: typeof PawreportTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pets/': {
       id: '/pets/'
       path: '/pets'
@@ -372,8 +437,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof VisitsVisitIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/walks/$walkId': {
+      id: '/walks/$walkId'
+      path: '/walks/$walkId'
+      fullPath: '/walks/$walkId'
+      preLoaderRoute: typeof WalksWalkIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/walks/$walkId/report': {
+      id: '/walks/$walkId/report'
+      path: '/report'
+      fullPath: '/walks/$walkId/report'
+      preLoaderRoute: typeof WalksWalkIdReportRouteImport
+      parentRoute: typeof WalksWalkIdRoute
+    }
   }
 }
+
+interface WalksWalkIdRouteChildren {
+  WalksWalkIdReportRoute: typeof WalksWalkIdReportRoute
+}
+
+const WalksWalkIdRouteChildren: WalksWalkIdRouteChildren = {
+  WalksWalkIdReportRoute: WalksWalkIdReportRoute,
+}
+
+const WalksWalkIdRouteWithChildren = WalksWalkIdRoute._addFileChildren(
+  WalksWalkIdRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -382,14 +473,17 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MessagesRoute: MessagesRoute,
   MoreRoute: MoreRoute,
+  MyPawsRoute: MyPawsRoute,
   ReportsRoute: ReportsRoute,
   SettingsRoute: SettingsRoute,
   BookingsBookingIdRoute: BookingsBookingIdRoute,
   ClientsClientIdRoute: ClientsClientIdRoute,
   ClientsNewRoute: ClientsNewRoute,
+  PawreportTokenRoute: PawreportTokenRoute,
   PetsPetIdRoute: PetsPetIdRoute,
   PetsNewRoute: PetsNewRoute,
   VisitsVisitIdRoute: VisitsVisitIdRoute,
+  WalksWalkIdRoute: WalksWalkIdRouteWithChildren,
   ClientsIndexRoute: ClientsIndexRoute,
   PetsIndexRoute: PetsIndexRoute,
   VisitsIndexRoute: VisitsIndexRoute,

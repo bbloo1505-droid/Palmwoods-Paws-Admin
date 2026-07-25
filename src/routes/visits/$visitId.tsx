@@ -23,7 +23,7 @@ export const Route = createFileRoute("/visits/$visitId")({
 
 function VisitFlowPage() {
   const { visitId } = Route.useParams();
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const navigate = useNavigate();
   const [visit, setVisit] = useState<Awaited<ReturnType<typeof getVisit>> | null>(null);
   const [checklist, setChecklist] = useState<VisitChecklistItem[]>([]);
@@ -68,10 +68,10 @@ function VisitFlowPage() {
   };
 
   const onPhoto = async (file: File | null) => {
-    if (!file || !user) return;
+    if (!file || !ownerId) return;
     setBusy(true);
     try {
-      await uploadVisitPhoto(user.id, visitId, file);
+      await uploadVisitPhoto(ownerId, visitId, file);
       await reload();
       setMessage("Photo added");
     } catch (err) {
@@ -82,7 +82,7 @@ function VisitFlowPage() {
   };
 
   const onFinish = async () => {
-    if (!user || !visit) return;
+    if (!ownerId || !visit) return;
     setBusy(true);
     setError(null);
     try {
@@ -97,7 +97,7 @@ function VisitFlowPage() {
         const clientId = booking.client_id || booking.client?.id;
         const amount = Number(booking.amount ?? 0);
         if (clientId && amount > 0) {
-          await createInvoice(user.id, {
+          await createInvoice(ownerId, {
             client_id: clientId,
             visit_id: visitId,
             amount,
@@ -240,3 +240,4 @@ function VisitFlowPage() {
     </div>
   );
 }
+

@@ -10,7 +10,7 @@ export const Route = createFileRoute("/clients/new")({
 });
 
 function NewClientPage() {
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,11 +27,11 @@ function NewClientPage() {
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!ownerId) return;
     setBusy(true);
     setError(null);
     try {
-      const client = await upsertClient(user.id, form);
+      const client = await upsertClient(ownerId, form);
       void navigate({ to: "/clients/$clientId", params: { clientId: client.id } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save client");
@@ -113,3 +113,4 @@ function NewClientPage() {
     </div>
   );
 }
+

@@ -12,7 +12,7 @@ export const Route = createFileRoute("/bookings/$bookingId")({
 
 function BookingDetailPage() {
   const { bookingId } = Route.useParams();
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<Awaited<ReturnType<typeof getBooking>> | null>(null);
   const [house, setHouse] = useState<HouseInfo | null>(null);
@@ -30,7 +30,7 @@ function BookingDetailPage() {
   }, [bookingId]);
 
   const onStart = async () => {
-    if (!user || !data) return;
+    if (!ownerId || !data) return;
     setBusy(true);
     try {
       const existing = Array.isArray(data.visit) ? data.visit[0] : data.visit;
@@ -38,7 +38,7 @@ function BookingDetailPage() {
         void navigate({ to: "/visits/$visitId", params: { visitId: existing.id } });
         return;
       }
-      const visit = await startVisit(user.id, data.id);
+      const visit = await startVisit(ownerId, data.id);
       void navigate({ to: "/visits/$visitId", params: { visitId: visit.id } });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start visit");
@@ -148,3 +148,4 @@ function BookingDetailPage() {
     </div>
   );
 }
+

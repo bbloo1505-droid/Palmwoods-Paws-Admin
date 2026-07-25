@@ -19,7 +19,7 @@ export const Route = createFileRoute("/calendar")({
 });
 
 function CalendarPage() {
-  const { user } = useAuth();
+  const { ownerId } = useAuth();
   const [anchor, setAnchor] = useState(new Date());
   const [jobs, setJobs] = useState<BookingWithRelations[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -64,11 +64,11 @@ function CalendarPage() {
 
   const onCreate = async (e: FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!ownerId) return;
     setBusy(true);
     setError(null);
     try {
-      await createBooking(user.id, {
+      await createBooking(ownerId, {
         client_id: form.client_id,
         pet_id: form.pet_id,
         starts_at: new Date(form.starts_at).toISOString(),
@@ -231,3 +231,4 @@ function CalendarPage() {
     </div>
   );
 }
+

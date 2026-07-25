@@ -1,5 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { Button, Card, PageHeader } from "@/components/ui";
+import { createFileRoute } from "@tanstack/react-router";
+import { Card, PageHeader } from "@/components/ui";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/settings")({
@@ -7,7 +7,7 @@ export const Route = createFileRoute("/settings")({
 });
 
 function SettingsPage() {
-  const { profile, user, signOut } = useAuth();
+  const { profile, user, authDisabled } = useAuth();
 
   return (
     <div className="mx-auto max-w-xl space-y-4">
@@ -19,18 +19,14 @@ function SettingsPage() {
         </p>
         <p>
           <span className="font-semibold">Email: </span>
-          {user?.email}
+          {authDisabled ? "Auth disabled for now" : user?.email}
         </p>
         <p className="text-muted">
-          This app is single-operator for Version 1. Team access comes later.
+          {authDisabled
+            ? "Login is turned off temporarily so you can use the app without signing in."
+            : "This app is single-operator for Version 1. Team access comes later."}
         </p>
       </Card>
-      <Button variant="secondary" onClick={() => void signOut()}>
-        Sign out
-      </Button>
-      <Link to="/more" className="block text-sm font-semibold text-olive-800">
-        More shortcuts
-      </Link>
     </div>
   );
 }
