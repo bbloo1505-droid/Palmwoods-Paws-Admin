@@ -1,19 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { format } from "date-fns";
 import { useEffect, useState } from "react";
-import { Cake, CalendarDays, MessageSquare, Pill, Plus, Syringe } from "lucide-react";
-import { ScheduleCard } from "@/components/ScheduleCard";
-import { Button, Card, EmptyState, PageHeader, SoftLink, StatCard } from "@/components/ui";
+import { AlertCircle, FileText, MessageSquare, Plus } from "lucide-react";
+import { TodayJobCard } from "@/components/TodayJobCard";
+import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
 import {
   countNewWebsiteEnquiries,
   getDashboardStats,
-  listRecentVisits,
-  listReminders,
+  listActiveWalksByBookingIds,
   listTodaysBookings,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import type { BookingWithRelations } from "@/lib/types";
-import { formatMoney, greetingForNow } from "@/lib/utils";
-import { format } from "date-fns";
 
 export const Route = createFileRoute("/")({
   component: DashboardPage,
@@ -22,17 +20,9 @@ export const Route = createFileRoute("/")({
 function DashboardPage() {
   const { profile } = useAuth();
   const [jobs, setJobs] = useState<BookingWithRelations[]>([]);
-  const [stats, setStats] = useState({
-    todayCount: 0,
-    weekRevenue: 0,
-    outstanding: 0,
-    unpaidCount: 0,
-  });
+  const [activeWalks, setActiveWalks] = useState<Record<string, string>>({});
   const [newEnquiries, setNewEnquiries] = useState(0);
-  const [reminders, setReminders] = useState<
-    Awaited<ReturnType<typeof listReminders>>
-  >([]);
-  const [recent, setRecent] = useState<Awaited<ReturnType<typeof listRecentVisits>>>([]);
+  const [unpaidCount, setUnpaidCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -40,22 +30,28 @@ function DashboardPage() {
     let alive = true;
     (async () => {
       try {
-        const [j, s, r, v, enquiryCount] = await Promise.all([
+        const [j, s, enquiryCount] = await Promise.all([
           listTodaysBookings(),
           getDashboardStats(),
-          listReminders(),
-          listRecentVisits(),
           countNewWebsiteEnquiries().catch(() => 0),
         ]);
         if (!alive) return;
         setJobs(j);
-        setStats(s);
+        setUnpaidCount(s.unpaidCount);
         setNewEnquiries(enquiryCount);
-        setReminders(r);
-        setRecent(v);
+
+        const walks = await listActiveWalksByBookingIds(
+          j.map((b) => b.id).filter(Boolean),
+        ).catch(() => []);
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const w of walks) {
+          if (w.booking_id) map[w.booking_id] = w.id;
+        }
+        setActiveWalks(map);
       } catch (e) {
         if (!alive) return;
-        setError(e instanceof Error ? e.message : "Could not load dashboard");
+        setError(e instanceof Error ? e.message : "Could not load today");
       } finally {
         if (alive) setLoading(false);
       }
@@ -66,138 +62,89 @@ function DashboardPage() {
   }, []);
 
   const name = profile?.full_name?.split(" ")[0] || "Anna";
+  const todayLabel = format(new Date(), "EEEE d MMMM");
+  const attentionItems = [
+    newEnquiries > 0
+      ? {
+          key: "enquiries",
+          label: `${newEnquiries} new enquir${newEnquiries === 1 ? "y" : "ies"}`,
+          to: "/messages" as const,
+          icon: MessageSquare,
+        }
+      : null,
+    unpaidCount > 0
+      ? {
+          key: "invoices",
+          label: `${unpaidCount} unpaid invoice${unpaidCount === 1 ? "" : "s"}`,
+          to: "/invoices" as const,
+          icon: FileText,
+        }
+      : null,
+  ].filter(Boolean) as {
+    key: string;
+    label: string;
+    to: "/messages" | "/invoices";
+    icon: typeof MessageSquare;
+  }[];
 
   return (
-    <div>
+    <div className="mx-auto max-w-xl space-y-6">
       <PageHeader
-        title={`${greetingForNow()}, ${name}!`}
-        subtitle="Here's what's happening today."
+        title={`Today`}
+        subtitle={`${todayLabel} · Hi ${name}`}
         action={
           <Link to="/calendar">
-            <Button variant="primary" size="lg">
+            <Button variant="secondary" size="sm">
               <Plus className="h-4 w-4" />
-              New Visit
+              Add
             </Button>
           </Link>
         }
       />
 
-      {error ? <p className="mb-4 text-sm text-danger">{error}</p> : null}
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
       {loading ? <p className="text-muted">Loading today…</p> : null}
 
-      <div className="grid gap-5 lg:grid-cols-[1.2fr_1fr]">
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-display text-xl text-olive-950">Today&apos;s Schedule</h2>
-            <SoftLink to="/calendar">View full calendar →</SoftLink>
-          </div>
-          {jobs.length === 0 && !loading ? (
-            <EmptyState
-              title="No jobs today"
-              body="Add a booking in Calendar, or enjoy a quiet day."
-              action={
-                <Link to="/calendar">
-                  <Button>Open calendar</Button>
-                </Link>
-              }
-            />
-          ) : (
-            jobs.map((job) => <ScheduleCard key={job.id} booking={job} />)
-          )}
-        </section>
-
-        <section className="space-y-4">
-          <div className="grid grid-cols-2 gap-3">
-            <StatCard
-              label="Today's visits"
-              value={String(stats.todayCount)}
-              hint="Scheduled"
-              icon={<CalendarDays className="h-5 w-5 text-olive-700" />}
-            />
-            <StatCard
-              label="Weekly revenue"
-              value={formatMoney(stats.weekRevenue)}
-              hint="Paid this week"
-              tone="success"
-            />
-            <StatCard
-              label="Outstanding"
-              value={formatMoney(stats.outstanding)}
-              hint={`${stats.unpaidCount} unpaid`}
-              tone="danger"
-            />
-            <Link to="/messages">
-              <StatCard
-                label="Enquiries"
-                value={String(newEnquiries)}
-                hint="New from website"
-                tone="info"
-                icon={<MessageSquare className="h-5 w-5 text-info" />}
-              />
-            </Link>
-          </div>
-
-          <Card>
-            <h3 className="font-display text-lg text-olive-950">Upcoming reminders</h3>
-            <ul className="mt-3 space-y-3">
-              {reminders.length === 0 ? (
-                <li className="text-sm text-muted">No reminders yet. Add them on a pet profile.</li>
-              ) : (
-                reminders.map((r) => {
-                  const Icon =
-                    r.kind === "vaccination" ? Syringe : r.kind === "medication" ? Pill : Cake;
-                  return (
-                    <li key={r.id} className="flex items-start gap-3 text-sm">
-                      <Icon className="mt-0.5 h-4 w-4 text-gold-dark" />
-                      <div>
-                        <p className="font-medium text-olive-950">{r.title}</p>
-                        <p className="text-muted">
-                          {r.pet?.name ? `${r.pet.name} · ` : ""}
-                          {format(new Date(r.due_on), "d MMM yyyy")}
-                        </p>
-                      </div>
-                    </li>
-                  );
-                })
-              )}
-            </ul>
-          </Card>
-        </section>
-      </div>
-
-      <section className="mt-6">
-        <h2 className="mb-3 font-display text-xl text-olive-950">Recent visits</h2>
-        <div className="grid gap-3 md:grid-cols-2">
-          {recent.length === 0 ? (
-            <Card className="text-sm text-muted">Completed visits will show here.</Card>
-          ) : (
-            recent.map((v) => {
-              const booking = v.booking as {
-                service_type?: string;
-                pet?: { name?: string };
-                client?: { name?: string };
-              } | null;
-              return (
-                <Card key={v.id} className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-olive-950">
-                      {booking?.pet?.name ?? "Pet"} · {booking?.client?.name ?? "Client"}
-                    </p>
-                    <p className="text-sm text-muted">
-                      {v.finished_at
-                        ? format(new Date(v.finished_at), "d MMM · h:mmaaa")
-                        : "Completed"}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-success/15 px-2 py-1 text-xs font-semibold text-success">
-                    Completed
-                  </span>
-                </Card>
-              );
-            })
-          )}
-        </div>
+      <section className="space-y-3">
+        {jobs.length === 0 && !loading ? (
+          <EmptyState
+            title="No jobs today"
+            body="Quiet day, or add a booking in Calendar."
+            action={
+              <Link to="/calendar">
+                <Button variant="gold">Open calendar</Button>
+              </Link>
+            }
+          />
+        ) : (
+          jobs.map((job) => (
+            <TodayJobCard key={job.id} booking={job} activeWalkId={activeWalks[job.id] ?? null} />
+          ))
+        )}
       </section>
+
+      {attentionItems.length > 0 ? (
+        <section>
+          <h2 className="mb-3 flex items-center gap-2 font-display text-xl text-olive-950">
+            <AlertCircle className="h-5 w-5 text-gold-dark" />
+            Needs attention
+          </h2>
+          <div className="space-y-2">
+            {attentionItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <Link key={item.key} to={item.to}>
+                  <Card className="flex items-center gap-3 transition hover:border-olive-700/30">
+                    <Icon className="h-5 w-5 text-gold-dark" />
+                    <span className="font-semibold text-olive-950">{item.label}</span>
+                    <span className="ml-auto text-sm font-semibold text-olive-800">Open →</span>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

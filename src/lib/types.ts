@@ -152,6 +152,18 @@ export const SERVICE_LABELS: Record<ServiceType, string> = {
   other: "Other",
 };
 
+/** Dog walks use GPS + Paw Report. Other services use the visit checklist flow. */
+export function isWalkService(service: ServiceType) {
+  return service === "dog_walk";
+}
+
+export function petEmoji(species?: string | null) {
+  const s = (species || "").toLowerCase();
+  if (s.includes("cat")) return "🐈";
+  if (s.includes("dog")) return "🐕";
+  return "🐾";
+}
+
 export const DEFAULT_CHECKLIST = [
   "Water",
   "Feed",

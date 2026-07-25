@@ -2,9 +2,9 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { Button, Card, PageHeader } from "@/components/ui";
-import { cancelBooking, getBooking, getHouseInfo, startVisit } from "@/lib/api";
+import { cancelBooking, getBooking, getHouseInfo, startJobFromBooking } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { SERVICE_LABELS, type HouseInfo } from "@/lib/types";
+import { SERVICE_LABELS, isWalkService, type HouseInfo } from "@/lib/types";
 
 export const Route = createFileRoute("/bookings/$bookingId")({
   component: BookingDetailPage,
@@ -33,15 +33,14 @@ function BookingDetailPage() {
     if (!ownerId || !data) return;
     setBusy(true);
     try {
-      const existing = Array.isArray(data.visit) ? data.visit[0] : data.visit;
-      if (existing?.id) {
-        void navigate({ to: "/visits/$visitId", params: { visitId: existing.id } });
-        return;
+      const job = await startJobFromBooking(ownerId, data.id);
+      if (job.kind === "walk") {
+        void navigate({ to: "/walks/$walkId", params: { walkId: job.id } });
+      } else {
+        void navigate({ to: "/visits/$visitId", params: { visitId: job.id } });
       }
-      const visit = await startVisit(ownerId, data.id);
-      void navigate({ to: "/visits/$visitId", params: { visitId: visit.id } });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start visit");
+      setError(err instanceof Error ? err.message : "Could not start job");
     } finally {
       setBusy(false);
     }
@@ -124,15 +123,20 @@ function BookingDetailPage() {
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        {visit?.status === "in_progress" || visit?.status === "completed" ? (
+        {!isWalkService(data.service_type) &&
+        (visit?.status === "in_progress" || visit?.status === "completed") ? (
           <Link to="/visits/$visitId" params={{ visitId: visit.id }} className="flex-1">
             <Button className="w-full" size="lg" variant="gold">
               {visit.status === "completed" ? "View visit" : "Continue visit"}
             </Button>
           </Link>
         ) : (
-          <Button className="flex-1" size="lg" variant="gold" disabled={busy} onClick={() => void onStart()}>
-            Start visit
+          <Button className="flex-1 min-h-14" size="lg" variant="gold" disabled={busy} onClick={() => void onStart()}>
+            {busy
+              ? "Starting…"
+              : isWalkService(data.service_type)
+                ? "Start Walk"
+                : "Start Visit"}
           </Button>
         )}
         <Button variant="secondary" size="lg" disabled={busy} onClick={() => void onCancel()}>

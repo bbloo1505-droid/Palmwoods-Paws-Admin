@@ -460,6 +460,11 @@ export async function startWalk(
   ownerId: string,
   input: { pet_id: string; client_id: string; suburb?: string | null; booking_id?: string | null },
 ) {
+  if (input.booking_id) {
+    const existing = await findActiveWalkForBooking(input.booking_id);
+    if (existing) return existing;
+  }
+
   const { data, error } = await supabase
     .from("walks")
     .insert({
@@ -474,6 +479,55 @@ export async function startWalk(
     .single();
   if (error) throw error;
   return data as Walk;
+}
+
+export async function findActiveWalkForBooking(bookingId: string) {
+  const { data, error } = await supabase
+    .from("walks")
+    .select("*")
+    .eq("booking_id", bookingId)
+    .eq("status", "in_progress")
+    .maybeSingle();
+  if (error) throw error;
+  return (data as Walk | null) ?? null;
+}
+
+export async function listActiveWalksByBookingIds(bookingIds: string[]) {
+  if (bookingIds.length === 0) return [] as Walk[];
+  const { data, error } = await supabase
+    .from("walks")
+    .select("id, booking_id, status, pet_id")
+    .in("booking_id", bookingIds)
+    .eq("status", "in_progress");
+  if (error) throw error;
+  return (data ?? []) as Pick<Walk, "id" | "booking_id" | "status" | "pet_id">[];
+}
+
+/** Start the right job type from a booking: walk (GPS + Paw Report) or visit. */
+export async function startJobFromBooking(ownerId: string, bookingId: string) {
+  const booking = await getBooking(bookingId);
+  if (booking.service_type === "dog_walk") {
+    if (!booking.pet_id || !booking.client_id) {
+      throw new Error("This booking needs a pet and client before starting a walk.");
+    }
+    const walk = await startWalk(ownerId, {
+      pet_id: booking.pet_id,
+      client_id: booking.client_id,
+      suburb: booking.client?.suburb ?? null,
+      booking_id: booking.id,
+    });
+    return { kind: "walk" as const, id: walk.id };
+  }
+
+  const existing = Array.isArray(booking.visit) ? booking.visit[0] : booking.visit;
+  if (existing?.id && existing.status === "in_progress") {
+    return { kind: "visit" as const, id: existing.id };
+  }
+  if (existing?.id && existing.status === "completed") {
+    return { kind: "visit" as const, id: existing.id };
+  }
+  const visit = await startVisit(ownerId, bookingId);
+  return { kind: "visit" as const, id: visit.id };
 }
 
 export async function getWalk(id: string) {
