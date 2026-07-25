@@ -2,7 +2,13 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { format } from "date-fns";
 import { useEffect, useState } from "react";
 import { Button, Card, PageHeader } from "@/components/ui";
-import { cancelBooking, getBooking, getHouseInfo, startJobFromBooking } from "@/lib/api";
+import {
+  cancelBooking,
+  findActiveWalkForBooking,
+  getBooking,
+  getHouseInfo,
+  startJobFromBooking,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { SERVICE_LABELS, isWalkService, type HouseInfo } from "@/lib/types";
 
@@ -16,6 +22,7 @@ function BookingDetailPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<Awaited<ReturnType<typeof getBooking>> | null>(null);
   const [house, setHouse] = useState<HouseInfo | null>(null);
+  const [activeWalkId, setActiveWalkId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -25,15 +32,33 @@ function BookingDetailPage() {
         setData(b);
         const h = await getHouseInfo(b.client_id);
         setHouse(h);
+        if (isWalkService(b.service_type)) {
+          const walk = await findActiveWalkForBooking(b.id).catch(() => null);
+          setActiveWalkId(walk?.id ?? null);
+        }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load booking"));
   }, [bookingId]);
 
   const onStart = async () => {
-    if (!ownerId || !data) return;
+    if (!data) return;
+    if (!ownerId) {
+      setError("You’re not signed in. Refresh the page or open Settings, then try again.");
+      return;
+    }
     setBusy(true);
+    setError(null);
     try {
+      if (activeWalkId) {
+        void navigate({ to: "/walks/$walkId", params: { walkId: activeWalkId } });
+        return;
+      }
       const job = await startJobFromBooking(ownerId, data.id);
+      if (isWalkService(data.service_type) && job.kind !== "walk") {
+        throw new Error(
+          "Walks & Paw Reports aren’t enabled yet. Open Settings → Copy Walks & Paw Reports SQL.",
+        );
+      }
       if (job.kind === "walk") {
         void navigate({ to: "/walks/$walkId", params: { walkId: job.id } });
       } else {
@@ -70,7 +95,16 @@ function BookingDetailPage() {
         title={`${data.pet?.name ?? "Pet"} · ${SERVICE_LABELS[data.service_type]}`}
         subtitle={`${format(new Date(data.starts_at), "EEEE d MMM · h:mmaaa")} · ${data.client?.name ?? ""}`}
       />
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? (
+        <div className="space-y-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2">
+          <p className="text-sm text-danger">{error}</p>
+          {/Settings|SQL|enabled/i.test(error) ? (
+            <Link to="/settings" className="text-sm font-semibold text-olive-800 underline-offset-2 hover:underline">
+              Open Settings →
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       <Card className="space-y-2 text-sm">
         <p>
@@ -123,20 +157,31 @@ function BookingDetailPage() {
       ) : null}
 
       <div className="flex flex-col gap-3 sm:flex-row">
-        {!isWalkService(data.service_type) &&
-        (visit?.status === "in_progress" || visit?.status === "completed") ? (
+        {isWalkService(data.service_type) ? (
+          <Button
+            className="min-h-14 flex-1"
+            size="lg"
+            variant="gold"
+            disabled={busy}
+            onClick={() => void onStart()}
+          >
+            {busy ? "Starting…" : activeWalkId ? "Continue walk" : "Start walk"}
+          </Button>
+        ) : visit?.status === "in_progress" || visit?.status === "completed" ? (
           <Link to="/visits/$visitId" params={{ visitId: visit.id }} className="flex-1">
-            <Button className="w-full" size="lg" variant="gold">
+            <Button className="w-full min-h-14" size="lg" variant="gold">
               {visit.status === "completed" ? "View visit" : "Continue visit"}
             </Button>
           </Link>
         ) : (
-          <Button className="flex-1 min-h-14" size="lg" variant="gold" disabled={busy} onClick={() => void onStart()}>
-            {busy
-              ? "Starting…"
-              : isWalkService(data.service_type)
-                ? "Start Walk"
-                : "Start Visit"}
+          <Button
+            className="min-h-14 flex-1"
+            size="lg"
+            variant="gold"
+            disabled={busy}
+            onClick={() => void onStart()}
+          >
+            {busy ? "Starting…" : "Start visit"}
           </Button>
         )}
         <Button variant="secondary" size="lg" disabled={busy} onClick={() => void onCancel()}>

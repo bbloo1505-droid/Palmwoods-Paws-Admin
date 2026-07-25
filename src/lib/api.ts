@@ -607,10 +607,15 @@ export async function startWalk(
   if (error) {
     if (isMissingRelation(error)) {
       throw new Error(
-        "Walk tracking isn't enabled yet. Open Settings → Enable Walks & Paw Reports, run the SQL, then try again.",
+        "Walks & Paw Reports aren’t enabled yet. Open Settings → Copy Walks & Paw Reports SQL, paste it in Supabase, then try Start walk again.",
       );
     }
-    throw error;
+    if (/foreign key|owner_id|profiles/i.test(error.message || "")) {
+      throw new Error(
+        "Couldn’t start this walk (account mismatch). Sign out and back in, then try again. If it still fails, open Settings.",
+      );
+    }
+    throw new Error(error.message || "Couldn’t start walk");
   }
   return data as Walk;
 }
@@ -654,25 +659,18 @@ export async function startJobFromBooking(ownerId: string, bookingId: string) {
     return { kind: "visit" as const, id: visit.id };
   };
 
+  // Dog walks always use the walk + Paw Report flow (never silent visit fallback).
   if (booking.service_type === "dog_walk") {
     if (!booking.pet_id || !booking.client_id) {
       throw new Error("This booking needs a pet and client before starting a walk.");
     }
-    try {
-      const walk = await startWalk(ownerId, {
-        pet_id: booking.pet_id,
-        client_id: booking.client_id,
-        suburb: booking.client?.suburb ?? null,
-        booking_id: booking.id,
-      });
-      return { kind: "walk" as const, id: walk.id };
-    } catch (e) {
-      // Keep Anna moving if Paw Reports SQL isn't installed yet
-      if (e instanceof Error && /Walk tracking isn't enabled/i.test(e.message)) {
-        return startOrContinueVisit();
-      }
-      throw e;
-    }
+    const walk = await startWalk(ownerId, {
+      pet_id: booking.pet_id,
+      client_id: booking.client_id,
+      suburb: booking.client?.suburb ?? null,
+      booking_id: booking.id,
+    });
+    return { kind: "walk" as const, id: walk.id };
   }
 
   return startOrContinueVisit();

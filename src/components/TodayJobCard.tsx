@@ -33,7 +33,10 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
   const inProgress = walkService ? walkInProgress : visitInProgress;
 
   const onStart = async () => {
-    if (!ownerId) return;
+    if (!ownerId) {
+      setError("You’re not signed in. Refresh the page or open Settings, then try again.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -46,6 +49,11 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
         return;
       }
       const job = await startJobFromBooking(ownerId, booking.id);
+      if (walkService && job.kind !== "walk") {
+        throw new Error(
+          "Walks & Paw Reports aren’t enabled yet. Open Settings → Copy Walks & Paw Reports SQL.",
+        );
+      }
       if (job.kind === "walk") {
         void navigate({ to: "/walks/$walkId", params: { walkId: job.id } });
       } else {
@@ -70,7 +78,14 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
 
   return (
     <Card className="space-y-3 p-4 sm:p-5">
-      <div className="flex items-start gap-3">
+      <button
+        type="button"
+        className="flex w-full items-start gap-3 rounded-xl text-left active:bg-cream/60"
+        onClick={() => {
+          if (!done) void onStart();
+        }}
+        disabled={busy || done}
+      >
         <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-olive-100 text-2xl">
           {booking.pet?.photo_url ? (
             <img src={booking.pet.photo_url} alt="" className="h-full w-full object-cover" />
@@ -93,25 +108,34 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
             </span>
           </p>
         </div>
-      </div>
+      </button>
 
       {walkService && !done ? (
         <p className="rounded-xl bg-cream/90 px-3 py-2 text-sm leading-snug text-olive-900">
           {inProgress ? (
             <>
-              <span className="font-semibold">In progress.</span> Add photos, then finish to send the
-              Paw Report.
+              <span className="font-semibold">Walk in progress.</span> Tap Continue, then{" "}
+              <span className="font-semibold">Finish walk → Paw Report</span> at the bottom.
             </>
           ) : (
             <>
-              <span className="font-semibold">Walk tip:</span> Start → photos/video on the walk →
-              Finish → send Paw Report to owner.
+              Tap the job or <span className="font-semibold">Start walk</span> → add photos →{" "}
+              <span className="font-semibold">Finish walk → Paw Report</span>.
             </>
           )}
         </p>
       ) : null}
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? (
+        <div className="space-y-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2">
+          <p className="text-sm text-danger">{error}</p>
+          {/Settings|SQL|enabled/i.test(error) ? (
+            <Link to="/settings" className="text-sm font-semibold text-olive-800 underline-offset-2 hover:underline">
+              Open Settings →
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
       <div className="flex flex-col gap-2">
         {done ? (
@@ -133,6 +157,7 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
           to="/bookings/$bookingId"
           params={{ bookingId: booking.id }}
           className="py-1 text-center text-sm font-semibold text-olive-800"
+          onClick={(e) => e.stopPropagation()}
         >
           Job details
         </Link>

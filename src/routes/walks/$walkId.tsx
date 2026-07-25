@@ -86,20 +86,32 @@ function ActiveWalkPage() {
   };
 
   const onFinish = async () => {
-    if (!ownerId) return;
+    if (!ownerId) {
+      setError("You’re not signed in. Refresh the page, then try Finish walk again.");
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const id = await ensureReport();
-      await updatePawReport(id, {
-        toilet_poo: toiletPoo,
-        toilet_wee: toiletWee || water,
-        voice_note_raw: note.trim() || null,
-      });
+      // Best-effort: save quick flags, but never block ending the walk / opening the report.
+      try {
+        const id = await ensureReport();
+        await updatePawReport(id, {
+          toilet_poo: toiletPoo,
+          toilet_wee: toiletWee || water,
+          voice_note_raw: note.trim() || null,
+        });
+      } catch {
+        /* report draft can be created on the next screen */
+      }
       await finishWalk(walkId);
-      void navigate({ to: "/walks/$walkId/report", params: { walkId } });
+      await navigate({ to: "/walks/$walkId/report", params: { walkId } });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not finish walk");
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Could not finish walk. Check Settings → Walks & Paw Reports SQL if this keeps happening.",
+      );
     } finally {
       setBusy(false);
     }
@@ -314,10 +326,44 @@ function ActiveWalkPage() {
         onChange={(e) => void onMedia(e.target.files, "video")}
       />
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
+      {error ? (
+        <div className="space-y-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2">
+          <p className="text-sm text-danger">{error}</p>
+          {/Settings|SQL|enabled/i.test(error) ? (
+            <Link to="/settings" className="text-sm font-semibold text-olive-800 underline-offset-2 hover:underline">
+              Open Settings →
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
 
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-olive-100 bg-warm-white/95 px-4 py-3 backdrop-blur md:static md:border-0 md:bg-transparent md:p-0 md:backdrop-blur-none">
-        <div className="mx-auto max-w-xl pb-[env(safe-area-inset-bottom)] md:pb-0">
+      {/* In-page finish control (always reachable even if sticky bar is awkward on some phones) */}
+      {inProgress ? (
+        <Button
+          className="w-full min-h-14 text-base"
+          size="lg"
+          variant="gold"
+          disabled={busy}
+          onClick={() => void onFinish()}
+        >
+          {busy ? "Opening Paw Report…" : "Finish walk → Paw Report"}
+        </Button>
+      ) : (
+        <Link to="/walks/$walkId/report" params={{ walkId }} className="block">
+          <Button className="w-full min-h-14 text-base" size="lg" variant="gold">
+            Open Paw Report
+          </Button>
+        </Link>
+      )}
+      {inProgress && mediaTotal === 0 ? (
+        <p className="text-center text-xs text-muted">
+          Tip: a couple of photos makes the owner report feel special — you can still finish without
+          them.
+        </p>
+      ) : null}
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-olive-100 bg-warm-white/95 px-4 py-3 shadow-[0_-8px_24px_-16px_rgba(43,48,38,0.45)] backdrop-blur md:hidden">
+        <div className="mx-auto max-w-xl pb-[env(safe-area-inset-bottom)]">
           {inProgress ? (
             <Button
               className="w-full min-h-14 text-base"
@@ -335,11 +381,6 @@ function ActiveWalkPage() {
               </Button>
             </Link>
           )}
-          {inProgress && mediaTotal === 0 ? (
-            <p className="mt-2 text-center text-xs text-muted">
-              Tip: a couple of photos makes the owner report feel special
-            </p>
-          ) : null}
         </div>
       </div>
     </div>
