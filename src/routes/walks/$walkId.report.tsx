@@ -9,7 +9,7 @@ import {
   pawReportMediaPublicUrl,
   pawReportShareUrl,
   regeneratePawReportBody,
-  sendPawReport,
+  deliverPawReport,
   updatePawReport,
   uploadPawReportMedia,
 } from "@/lib/api";
@@ -32,6 +32,8 @@ function PawReportComposePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [emailedTo, setEmailedTo] = useState<string | null>(null);
+  const [ownerPhone, setOwnerPhone] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
 
   const reload = async () => {
@@ -126,23 +128,12 @@ function PawReportComposePage() {
         report_body: preview || null,
       });
       if (!preview.trim()) await regeneratePawReportBody(report.id);
-      const sent = await sendPawReport(report.id);
-      setReport(sent);
-      const url = pawReportShareUrl(sent.public_token);
-      setShareUrl(url);
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: `${walk?.pet?.name ?? "Paw"} Report`,
-            text: `${walk?.pet?.name ?? "Your dog"}'s adventure is ready`,
-            url,
-          });
-        } catch {
-          /* user cancelled share sheet */
-        }
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-      }
+      const url = pawReportShareUrl(report.public_token);
+      const delivered = await deliverPawReport(report.id, url);
+      setReport(delivered.report);
+      setShareUrl(pawReportShareUrl(delivered.report.public_token));
+      setEmailedTo(delivered.emailedTo);
+      setOwnerPhone(delivered.phone);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not send report");
     } finally {
@@ -283,6 +274,13 @@ function PawReportComposePage() {
       {shareUrl ? (
         <Card className="space-y-3">
           <p className="font-display text-xl text-olive-950">Paw Report sent</p>
+          {emailedTo ? (
+            <p className="text-sm text-olive-900">
+              Email sent to <span className="font-semibold">{emailedTo}</span>
+            </p>
+          ) : (
+            <p className="text-sm text-muted">Report is ready. Share the link below if needed.</p>
+          )}
           <p className="break-all text-sm text-muted">{shareUrl}</p>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Link to="/pawreport/$token" params={{ token: report.public_token }} className="flex-1">
@@ -299,10 +297,21 @@ function PawReportComposePage() {
               Copy link
             </Button>
           </div>
+          {ownerPhone ? (
+            <a
+              href={`sms:${ownerPhone.replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(
+                `${walk.pet?.name ?? "Your dog"}'s Paw Report is ready ${shareUrl}`,
+              )}`}
+            >
+              <Button className="w-full" variant="secondary">
+                Also text owner
+              </Button>
+            </a>
+          ) : null}
         </Card>
       ) : (
-        <Button className="w-full" size="lg" variant="gold" disabled={busy} onClick={() => void onSend()}>
-          {busy ? "Sending…" : "Send Paw Report"}
+        <Button className="w-full min-h-14" size="lg" variant="gold" disabled={busy} onClick={() => void onSend()}>
+          {busy ? "Sending to owner…" : "Send Paw Report"}
         </Button>
       )}
     </div>

@@ -678,7 +678,15 @@ export async function regeneratePawReportBody(reportId: string) {
 }
 
 export async function sendPawReport(reportId: string) {
-  await regeneratePawReportBody(reportId);
+  const { data: existing, error: loadError } = await supabase
+    .from("paw_reports")
+    .select("report_body")
+    .eq("id", reportId)
+    .single();
+  if (loadError) throw loadError;
+  if (!String(existing?.report_body || "").trim()) {
+    await regeneratePawReportBody(reportId);
+  }
   const { data, error } = await supabase
     .from("paw_reports")
     .update({ status: "sent", sent_at: new Date().toISOString() })
@@ -778,10 +786,35 @@ export async function listClientSentReports(clientId: string) {
 }
 
 export function pawReportShareUrl(token: string) {
+  const configured = (import.meta.env.VITE_PUBLIC_APP_URL as string | undefined)?.replace(/\/$/, "");
+  if (configured) return `${configured}/pawreport/${token}`;
   if (typeof window !== "undefined") {
     return `${window.location.origin}/pawreport/${token}`;
   }
   return `/pawreport/${token}`;
+}
+
+/** Mark report sent in DB, then email the owner the private link via Admin API. */
+export async function deliverPawReport(reportId: string, shareUrl: string) {
+  const sent = await sendPawReport(reportId);
+  const res = await fetch("/api/send-paw-report", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reportId, shareUrl }),
+  });
+  const payload = (await res.json().catch(() => null)) as {
+    error?: string;
+    emailedTo?: string;
+    phone?: string | null;
+  } | null;
+  if (!res.ok) {
+    throw new Error(payload?.error || "Paw Report was saved, but the owner email failed.");
+  }
+  return {
+    report: sent,
+    emailedTo: payload?.emailedTo ?? null,
+    phone: payload?.phone ?? null,
+  };
 }
 
 export async function listWebsiteEnquiries() {
