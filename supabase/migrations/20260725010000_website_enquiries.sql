@@ -1,5 +1,5 @@
 -- Website contact form enquiries → Anna's CRM inbox
--- Run in Supabase SQL editor for project wuwpmixdrruonrvryfu
+-- Run in Supabase SQL editor for project wuwpvmixdrruonrvryfu
 
 create table if not exists public.website_enquiries (
   id uuid primary key default gen_random_uuid(),
