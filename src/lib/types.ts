@@ -156,6 +156,30 @@ export const SERVICE_LABELS: Record<ServiceType, string> = {
   other: "Other",
 };
 
+/** Custom typed service names are stored as the first notes line: `Service: …` */
+export function bookingServiceLabel(booking: {
+  service_type: ServiceType;
+  notes?: string | null;
+}) {
+  if (booking.service_type === "other") {
+    const custom = booking.notes?.match(/^Service:\s*(.+)$/m)?.[1]?.trim();
+    if (custom) return custom;
+  }
+  return SERVICE_LABELS[booking.service_type] ?? "Service";
+}
+
+export function notesWithCustomService(
+  notes: string,
+  customService: string | null | undefined,
+  serviceType: ServiceType,
+) {
+  const cleaned = notes.replace(/^Service:\s*.+\n?/m, "").trim();
+  if (serviceType === "other" && customService?.trim()) {
+    return [`Service: ${customService.trim()}`, cleaned].filter(Boolean).join("\n");
+  }
+  return cleaned || null;
+}
+
 /** Dog walks use the Paw Report flow. Other services use the visit checklist flow. */
 export function isWalkService(service: ServiceType) {
   return service === "dog_walk";

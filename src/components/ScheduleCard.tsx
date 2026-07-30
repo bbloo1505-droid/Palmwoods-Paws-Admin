@@ -1,7 +1,7 @@
 import { format, formatDistanceToNow } from "date-fns";
 import { Link } from "@tanstack/react-router";
 import { MapPin } from "lucide-react";
-import { SERVICE_LABELS, type BookingWithRelations } from "@/lib/types";
+import { bookingServiceLabel, type BookingWithRelations } from "@/lib/types";
 import { Card } from "@/components/ui";
 
 export function ScheduleCard({ booking }: { booking: BookingWithRelations }) {
@@ -23,7 +23,7 @@ export function ScheduleCard({ booking }: { booking: BookingWithRelations }) {
           <p className="font-semibold text-olive-950">{format(new Date(booking.starts_at), "h:mmaaa")}</p>
           <p className="truncate font-medium">{booking.pet?.name ?? "Pet"}</p>
         </div>
-        <p className="text-sm text-muted">{SERVICE_LABELS[booking.service_type]}</p>
+        <p className="text-sm text-muted">{bookingServiceLabel(booking)}</p>
         <p className="mt-0.5 flex items-center gap-1 text-xs text-muted">
           <MapPin className="h-3.5 w-3.5" />
           {booking.client?.suburb || booking.client?.address || "Location TBC"}

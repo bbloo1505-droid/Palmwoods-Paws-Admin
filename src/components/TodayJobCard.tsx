@@ -6,7 +6,7 @@ import { Button, Card } from "@/components/ui";
 import { startJobFromBooking } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
-  SERVICE_LABELS,
+  bookingServiceLabel,
   isWalkService,
   petEmoji,
   type BookingWithRelations,
@@ -100,7 +100,7 @@ export function TodayJobCard({ booking, activeWalkId }: Props) {
           <h3 className="font-display text-2xl leading-tight text-olive-950">
             {booking.pet?.name ?? "Pet"}
           </h3>
-          <p className="text-sm text-muted">{SERVICE_LABELS[booking.service_type]}</p>
+          <p className="text-sm text-muted">{bookingServiceLabel(booking)}</p>
           <p className="mt-1 flex items-center gap-1 text-sm text-muted">
             <MapPin className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate">

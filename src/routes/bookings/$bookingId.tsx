@@ -10,7 +10,7 @@ import {
   startJobFromBooking,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { SERVICE_LABELS, isWalkService, type HouseInfo } from "@/lib/types";
+import { SERVICE_LABELS, isWalkService, bookingServiceLabel, type HouseInfo } from "@/lib/types";
 
 export const Route = createFileRoute("/bookings/$bookingId")({
   component: BookingDetailPage,
@@ -92,7 +92,7 @@ function BookingDetailPage() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <PageHeader
-        title={`${data.pet?.name ?? "Pet"} · ${SERVICE_LABELS[data.service_type]}`}
+        title={`${data.pet?.name ?? "Pet"} · ${bookingServiceLabel(data)}`}
         subtitle={`${format(new Date(data.starts_at), "EEEE d MMM · h:mmaaa")} · ${data.client?.name ?? ""}`}
       />
       {error ? (

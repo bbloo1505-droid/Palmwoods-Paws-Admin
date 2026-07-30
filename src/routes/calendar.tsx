@@ -34,6 +34,7 @@ import {
   type Client,
   type Pet,
   type ServiceType,
+  notesWithCustomService,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -42,6 +43,7 @@ export const Route = createFileRoute("/calendar")({
 });
 
 type CalendarView = "day" | "week" | "month";
+type ServiceEntry = "list" | "manual";
 
 const VIEW_STORAGE_KEY = "pp-calendar-view";
 
@@ -60,6 +62,10 @@ const VIEW_OPTIONS: { value: CalendarView; label: string }[] = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
 ];
+
+const PRESET_SERVICES = (Object.keys(SERVICE_LABELS) as ServiceType[]).filter(
+  (key) => key !== "other",
+);
 
 function readStoredView(): CalendarView {
   try {
@@ -99,6 +105,7 @@ function CalendarPage() {
   const [pets, setPets] = useState<Pet[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [mode, setMode] = useState<"recurring" | "once">("recurring");
+  const [serviceEntry, setServiceEntry] = useState<ServiceEntry>("list");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -110,6 +117,7 @@ function CalendarPage() {
     time: "09:00",
     weekdays: [1, 3] as number[],
     service_type: "dog_walk" as ServiceType,
+    custom_service: "",
     amount: "28",
     weeks: "12",
     notes: "",
@@ -219,27 +227,47 @@ function CalendarPage() {
     setViewPersist("day");
   };
 
+  const serviceLabel =
+    serviceEntry === "manual"
+      ? form.custom_service.trim() || "Custom service"
+      : SERVICE_LABELS[form.service_type];
+
+  const resolvedServiceType: ServiceType =
+    serviceEntry === "manual" ? "other" : form.service_type;
+
+  const buildNotes = () =>
+    notesWithCustomService(
+      form.notes,
+      serviceEntry === "manual" ? form.custom_service : null,
+      resolvedServiceType,
+    );
+
   const onCreate = async (e: FormEvent) => {
     e.preventDefault();
     if (!ownerId) return;
+    if (serviceEntry === "manual" && !form.custom_service.trim()) {
+      setError("Type a service name, or switch back to the service list.");
+      return;
+    }
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
+      const notes = buildNotes();
       if (mode === "recurring") {
         const created = await createRecurringBookings(ownerId, {
           client_id: form.client_id,
           pet_id: form.pet_id,
-          service_type: form.service_type,
+          service_type: resolvedServiceType,
           amount: form.amount ? Number(form.amount) : null,
-          notes: form.notes,
+          notes,
           time: form.time,
           weekdays: form.weekdays,
           startFrom: form.start_from,
           weeks: Number(form.weeks) || 12,
         });
         setMessage(
-          `Booked ${created.length} ${SERVICE_LABELS[form.service_type].toLowerCase()}${
+          `Booked ${created.length} ${serviceLabel.toLowerCase()}${
             created.length === 1 ? "" : "s"
           } for ${selectedPet?.name ?? "pet"}.`,
         );
@@ -248,12 +276,12 @@ function CalendarPage() {
           client_id: form.client_id,
           pet_id: form.pet_id,
           starts_at: new Date(form.starts_at).toISOString(),
-          service_type: form.service_type,
+          service_type: resolvedServiceType,
           amount: form.amount ? Number(form.amount) : null,
           weeks: 1,
-          notes: form.notes,
+          notes,
         });
-        setMessage("One-off booking created.");
+        setMessage(`One-off booking created · ${serviceLabel}.`);
       }
       setShowForm(false);
       await reload();
@@ -313,7 +341,7 @@ function CalendarPage() {
 
       {showForm ? (
         <Card className="mb-5 space-y-4">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               type="button"
               variant={mode === "recurring" ? "gold" : "secondary"}
@@ -328,9 +356,14 @@ function CalendarPage() {
               size="sm"
               onClick={() => setMode("once")}
             >
-              One-off
+              One-off / single
             </Button>
           </div>
+          <p className="text-sm text-muted">
+            {mode === "recurring"
+              ? "Repeat on chosen weekdays for several weeks."
+              : "Book one single visit on a date and time."}
+          </p>
 
           <form className="grid gap-3 md:grid-cols-2" onSubmit={(e) => void onCreate(e)}>
             <Field label="Client">
@@ -366,19 +399,59 @@ function CalendarPage() {
               </select>
             </Field>
 
-            <Field label="Service">
-              <select
-                className={inputClassName()}
-                value={form.service_type}
-                onChange={(e) => setForm({ ...form, service_type: e.target.value as ServiceType })}
-              >
-                {Object.entries(SERVICE_LABELS).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </Field>
+            <div className="md:col-span-2 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm font-medium text-olive-900">Service</p>
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={serviceEntry === "list" ? "gold" : "secondary"}
+                    onClick={() => {
+                      setServiceEntry("list");
+                      setForm((f) => ({
+                        ...f,
+                        service_type: f.service_type === "other" ? "dog_walk" : f.service_type,
+                      }));
+                    }}
+                  >
+                    From list
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={serviceEntry === "manual" ? "gold" : "secondary"}
+                    onClick={() => setServiceEntry("manual")}
+                  >
+                    Type manually
+                  </Button>
+                </div>
+              </div>
+              {serviceEntry === "list" ? (
+                <select
+                  className={inputClassName()}
+                  value={form.service_type}
+                  onChange={(e) =>
+                    setForm({ ...form, service_type: e.target.value as ServiceType })
+                  }
+                >
+                  {PRESET_SERVICES.map((value) => (
+                    <option key={value} value={value}>
+                      {SERVICE_LABELS[value]}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  className={inputClassName()}
+                  required
+                  value={form.custom_service}
+                  onChange={(e) => setForm({ ...form, custom_service: e.target.value })}
+                  placeholder="e.g. Weekend drop-in, puppy social, custom visit…"
+                />
+              )}
+            </div>
+
             <Field label="Amount ($)">
               <input
                 className={inputClassName()}
@@ -447,7 +520,7 @@ function CalendarPage() {
                 <div className="flex items-end">
                   <Card className="w-full bg-cream/70 text-sm text-olive-950">
                     <p className="font-semibold">
-                      {selectedPet?.name ?? "Pet"} · {SERVICE_LABELS[form.service_type]}
+                      {selectedPet?.name ?? "Pet"} · {serviceLabel}
                     </p>
                     <p className="mt-1 text-muted">
                       {dayLabels || "Pick days"} at {form.time} · {previewCount} bookings · $
@@ -457,15 +530,30 @@ function CalendarPage() {
                 </div>
               </>
             ) : (
-              <Field label="Starts" className="md:col-span-2">
-                <input
-                  className={inputClassName()}
-                  type="datetime-local"
-                  required
-                  value={form.starts_at}
-                  onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
-                />
-              </Field>
+              <>
+                <Field label="Date & time" className="md:col-span-2">
+                  <input
+                    className={inputClassName()}
+                    type="datetime-local"
+                    required
+                    value={form.starts_at}
+                    onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
+                  />
+                </Field>
+                <div className="md:col-span-2">
+                  <Card className="w-full bg-cream/70 text-sm text-olive-950">
+                    <p className="font-semibold">
+                      One-off · {selectedPet?.name ?? "Pet"} · {serviceLabel}
+                    </p>
+                    <p className="mt-1 text-muted">
+                      {form.starts_at
+                        ? format(new Date(form.starts_at), "EEEE d MMM yyyy · h:mmaaa")
+                        : "Pick a date and time"}{" "}
+                      · ${form.amount || "0"}
+                    </p>
+                  </Card>
+                </div>
+              </>
             )}
 
             <Field label="Notes" className="md:col-span-2">
@@ -483,7 +571,12 @@ function CalendarPage() {
                 variant="gold"
                 size="lg"
                 className="min-h-14 w-full"
-                disabled={busy || !form.pet_id || (mode === "recurring" && form.weekdays.length === 0)}
+                disabled={
+                  busy ||
+                  !form.pet_id ||
+                  (mode === "recurring" && form.weekdays.length === 0) ||
+                  (serviceEntry === "manual" && !form.custom_service.trim())
+                }
               >
                 {busy
                   ? "Saving…"
