@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CalendarRouteImport } from './routes/calendar'
 import { Route as GalleryRouteImport } from './routes/gallery'
+import { Route as InvoicesRouteImport } from './routes/invoices'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as MoreRouteImport } from './routes/more'
@@ -22,8 +23,7 @@ import { Route as BookingsBookingIdRouteImport } from './routes/bookings/$bookin
 import { Route as ClientsIndexRouteImport } from './routes/clients/index'
 import { Route as ClientsClientIdRouteImport } from './routes/clients/$clientId'
 import { Route as ClientsNewRouteImport } from './routes/clients/new'
-import { Route as InvoicesIndexRouteImport } from './routes/invoices/index'
-import { Route as InvoicesNewRouteImport } from './routes/invoices/new'
+import { Route as InvoicesNewRouteImport } from './routes/invoices_.new'
 import { Route as PawreportTokenRouteImport } from './routes/pawreport/$token'
 import { Route as PetsIndexRouteImport } from './routes/pets/index'
 import { Route as PetsPetIdRouteImport } from './routes/pets/$petId'
@@ -46,6 +46,11 @@ const CalendarRoute = CalendarRouteImport.update({
 const GalleryRoute = GalleryRouteImport.update({
   id: '/gallery',
   path: '/gallery',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InvoicesRoute = InvoicesRouteImport.update({
+  id: '/invoices',
+  path: '/invoices',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -98,13 +103,8 @@ const ClientsNewRoute = ClientsNewRouteImport.update({
   path: '/clients/new',
   getParentRoute: () => rootRouteImport,
 } as any)
-const InvoicesIndexRoute = InvoicesIndexRouteImport.update({
-  id: '/invoices/',
-  path: '/invoices/',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const InvoicesNewRoute = InvoicesNewRouteImport.update({
-  id: '/invoices/new',
+  id: '/invoices_/new',
   path: '/invoices/new',
   getParentRoute: () => rootRouteImport,
 } as any)
@@ -153,6 +153,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/gallery': typeof GalleryRoute
+  '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
@@ -169,7 +170,6 @@ export interface FileRoutesByFullPath {
   '/visits/$visitId': typeof VisitsVisitIdRoute
   '/walks/$walkId': typeof WalksWalkIdRouteWithChildren
   '/clients/': typeof ClientsIndexRoute
-  '/invoices/': typeof InvoicesIndexRoute
   '/pets/': typeof PetsIndexRoute
   '/visits/': typeof VisitsIndexRoute
   '/walks/$walkId/report': typeof WalksWalkIdReportRoute
@@ -178,6 +178,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/gallery': typeof GalleryRoute
+  '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
@@ -194,7 +195,6 @@ export interface FileRoutesByTo {
   '/visits/$visitId': typeof VisitsVisitIdRoute
   '/walks/$walkId': typeof WalksWalkIdRouteWithChildren
   '/clients': typeof ClientsIndexRoute
-  '/invoices': typeof InvoicesIndexRoute
   '/pets': typeof PetsIndexRoute
   '/visits': typeof VisitsIndexRoute
   '/walks/$walkId/report': typeof WalksWalkIdReportRoute
@@ -204,6 +204,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/gallery': typeof GalleryRoute
+  '/invoices': typeof InvoicesRoute
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
@@ -213,14 +214,13 @@ export interface FileRoutesById {
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
-  '/invoices/new': typeof InvoicesNewRoute
+  '/invoices_/new': typeof InvoicesNewRoute
   '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
   '/visits/$visitId': typeof VisitsVisitIdRoute
   '/walks/$walkId': typeof WalksWalkIdRouteWithChildren
   '/clients/': typeof ClientsIndexRoute
-  '/invoices/': typeof InvoicesIndexRoute
   '/pets/': typeof PetsIndexRoute
   '/visits/': typeof VisitsIndexRoute
   '/walks/$walkId/report': typeof WalksWalkIdReportRoute
@@ -231,6 +231,7 @@ export interface FileRouteTypes {
     | '/'
     | '/calendar'
     | '/gallery'
+    | '/invoices'
     | '/login'
     | '/messages'
     | '/more'
@@ -247,7 +248,6 @@ export interface FileRouteTypes {
     | '/visits/$visitId'
     | '/walks/$walkId'
     | '/clients/'
-    | '/invoices/'
     | '/pets/'
     | '/visits/'
     | '/walks/$walkId/report'
@@ -256,6 +256,7 @@ export interface FileRouteTypes {
     | '/'
     | '/calendar'
     | '/gallery'
+    | '/invoices'
     | '/login'
     | '/messages'
     | '/more'
@@ -272,7 +273,6 @@ export interface FileRouteTypes {
     | '/visits/$visitId'
     | '/walks/$walkId'
     | '/clients'
-    | '/invoices'
     | '/pets'
     | '/visits'
     | '/walks/$walkId/report'
@@ -281,6 +281,7 @@ export interface FileRouteTypes {
     | '/'
     | '/calendar'
     | '/gallery'
+    | '/invoices'
     | '/login'
     | '/messages'
     | '/more'
@@ -290,14 +291,13 @@ export interface FileRouteTypes {
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
-    | '/invoices/new'
+    | '/invoices_/new'
     | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
     | '/visits/$visitId'
     | '/walks/$walkId'
     | '/clients/'
-    | '/invoices/'
     | '/pets/'
     | '/visits/'
     | '/walks/$walkId/report'
@@ -307,6 +307,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CalendarRoute: typeof CalendarRoute
   GalleryRoute: typeof GalleryRoute
+  InvoicesRoute: typeof InvoicesRoute
   LoginRoute: typeof LoginRoute
   MessagesRoute: typeof MessagesRoute
   MoreRoute: typeof MoreRoute
@@ -323,7 +324,6 @@ export interface RootRouteChildren {
   VisitsVisitIdRoute: typeof VisitsVisitIdRoute
   WalksWalkIdRoute: typeof WalksWalkIdRouteWithChildren
   ClientsIndexRoute: typeof ClientsIndexRoute
-  InvoicesIndexRoute: typeof InvoicesIndexRoute
   PetsIndexRoute: typeof PetsIndexRoute
   VisitsIndexRoute: typeof VisitsIndexRoute
 }
@@ -349,6 +349,13 @@ declare module '@tanstack/react-router' {
       path: '/gallery'
       fullPath: '/gallery'
       preLoaderRoute: typeof GalleryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invoices': {
+      id: '/invoices'
+      path: '/invoices'
+      fullPath: '/invoices'
+      preLoaderRoute: typeof InvoicesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -421,15 +428,8 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/invoices/': {
-      id: '/invoices/'
-      path: '/invoices'
-      fullPath: '/invoices/'
-      preLoaderRoute: typeof InvoicesIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/invoices/new': {
-      id: '/invoices/new'
+    '/invoices_/new': {
+      id: '/invoices_/new'
       path: '/invoices/new'
       fullPath: '/invoices/new'
       preLoaderRoute: typeof InvoicesNewRouteImport
@@ -510,6 +510,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CalendarRoute: CalendarRoute,
   GalleryRoute: GalleryRoute,
+  InvoicesRoute: InvoicesRoute,
   LoginRoute: LoginRoute,
   MessagesRoute: MessagesRoute,
   MoreRoute: MoreRoute,
@@ -526,7 +527,6 @@ const rootRouteChildren: RootRouteChildren = {
   VisitsVisitIdRoute: VisitsVisitIdRoute,
   WalksWalkIdRoute: WalksWalkIdRouteWithChildren,
   ClientsIndexRoute: ClientsIndexRoute,
-  InvoicesIndexRoute: InvoicesIndexRoute,
   PetsIndexRoute: PetsIndexRoute,
   VisitsIndexRoute: VisitsIndexRoute,
 }

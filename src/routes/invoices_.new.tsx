@@ -34,7 +34,7 @@ const searchSchema = z.object({
   petId: z.string().optional(),
 });
 
-export const Route = createFileRoute("/invoices/new")({
+export const Route = createFileRoute("/invoices_/new")({
   validateSearch: searchSchema,
   component: NewInvoicePage,
 });

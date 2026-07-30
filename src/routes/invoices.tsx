@@ -10,7 +10,7 @@ import { parseInvoiceNotes } from "@/lib/rates";
 import type { Client, Invoice } from "@/lib/types";
 import { formatMoney } from "@/lib/utils";
 
-export const Route = createFileRoute("/invoices/")({
+export const Route = createFileRoute("/invoices")({
   component: InvoicesPage,
 });
 
