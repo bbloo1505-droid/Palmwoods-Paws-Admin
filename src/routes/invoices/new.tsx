@@ -3,7 +3,7 @@ import { addDays, format } from "date-fns";
 import { Download, Plus, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
-import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
+import { Button, inputClassName } from "@/components/ui";
 import {
   createInvoice,
   downloadStoredInvoicePdf,
@@ -12,20 +12,16 @@ import {
   listPets,
   nextInvoiceNumber,
   saveInvoicePdfFile,
+  upsertClient,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formatInvoiceNumber } from "@/lib/invoiceBusiness";
-import { buildInvoicePdf, downloadInvoicePdf, downloadPdfBytes } from "@/lib/invoicePdf";
 import {
-  INVOICE_SERVICES,
-  buildInvoiceNotes,
-  describeInvoiceLine,
-  getServiceRate,
-  suggestInvoiceAmount,
-  type DurationKey,
-  type InvoiceLineSnapshot,
-  type InvoiceServiceKey,
-} from "@/lib/rates";
+  INVOICE_BUSINESS,
+  formatInvoiceNumber,
+  paymentReference,
+} from "@/lib/invoiceBusiness";
+import { buildInvoicePdf, downloadPdfBytes } from "@/lib/invoicePdf";
+import { buildInvoiceNotes, type InvoiceLineSnapshot } from "@/lib/rates";
 import type { Client, Pet } from "@/lib/types";
 import { cn, formatMoney } from "@/lib/utils";
 
@@ -39,309 +35,249 @@ export const Route = createFileRoute("/invoices/new")({
   component: NewInvoicePage,
 });
 
-type Step = "details" | "review" | "done";
-
 type LineDraft = {
   id: string;
-  petId: string;
-  serviceKey: InvoiceServiceKey;
-  durationKey: DurationKey;
-  serviceDate: string;
-  extraPets: number;
-  override: boolean;
+  date: string;
+  description: string;
   amount: string;
-  customDescription: string;
 };
+
+type BillTo = {
+  name: string;
+  address: string;
+  suburb: string;
+  phone: string;
+  email: string;
+  petName: string;
+};
+
+type Step = "edit" | "done";
 
 function todayIso() {
   return format(new Date(), "yyyy-MM-dd");
 }
 
-function newLineId() {
+function newId() {
   return crypto.randomUUID();
 }
 
-function makeLine(partial?: Partial<LineDraft>): LineDraft {
-  const serviceKey = partial?.serviceKey ?? "walk_regular";
-  const durationKey =
-    partial?.durationKey ?? getServiceRate(serviceKey).options[0]?.key ?? "30";
-  const quote = suggestInvoiceAmount({
-    serviceKey,
-    durationKey,
-    extraPets: serviceKey === "pet_minding" ? partial?.extraPets ?? 0 : 0,
-  });
-  return {
-    id: partial?.id ?? newLineId(),
-    petId: partial?.petId ?? "",
-    serviceKey,
-    durationKey,
-    serviceDate: partial?.serviceDate ?? todayIso(),
-    extraPets: partial?.extraPets ?? 0,
-    override: partial?.override ?? false,
-    amount: partial?.amount ?? String(quote.standardTotal),
-    customDescription: partial?.customDescription ?? "",
-  };
+function emptyLine(date = todayIso()): LineDraft {
+  return { id: newId(), date, description: "", amount: "" };
 }
+
+function emptyBillTo(): BillTo {
+  return { name: "", address: "", suburb: "", phone: "", email: "", petName: "" };
+}
+
+const fieldClass =
+  "w-full rounded-md border border-[#e8ebdd] bg-white px-2.5 py-2 text-sm text-[#263126] outline-none placeholder:text-[#7b8177]/focus:border-[#e5b950]";
 
 function NewInvoicePage() {
   const { ownerId } = useAuth();
   const { clientId: presetClientId, petId: presetPetId } = Route.useSearch();
 
-  const [step, setStep] = useState<Step>("details");
+  const [step, setStep] = useState<Step>("edit");
   const [clients, setClients] = useState<Client[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
+  const [linkedClientId, setLinkedClientId] = useState(presetClientId ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [invoiceSeq, setInvoiceSeq] = useState(1);
   const [savedPdfPath, setSavedPdfPath] = useState<string | null>(null);
   const [savedPdfBytes, setSavedPdfBytes] = useState<Uint8Array | null>(null);
 
-  const [clientId, setClientId] = useState(presetClientId ?? "");
+  const [invoiceNumber, setInvoiceNumber] = useState("001");
   const [invoiceDate, setInvoiceDate] = useState(todayIso());
   const [dueDate, setDueDate] = useState(format(addDays(new Date(), 7), "yyyy-MM-dd"));
-  const [freeNote, setFreeNote] = useState("");
-  const [lines, setLines] = useState<LineDraft[]>([makeLine({ petId: presetPetId ?? "" })]);
-
-  const invoiceNumber = formatInvoiceNumber(invoiceSeq);
+  const [billTo, setBillTo] = useState<BillTo>(emptyBillTo());
+  const [lines, setLines] = useState<LineDraft[]>([emptyLine(), emptyLine(), emptyLine()]);
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     nextInvoiceNumber()
-      .then(setInvoiceSeq)
-      .catch(() => setInvoiceSeq(1));
+      .then((n) => setInvoiceNumber(formatInvoiceNumber(n)))
+      .catch(() => setInvoiceNumber("001"));
 
     listClients()
       .then(async (c) => {
         setClients(c);
-        let nextClientId = presetClientId ?? "";
-        if (!nextClientId && c[0]) nextClientId = c[0].id;
-        setClientId(nextClientId);
+        let clientId = presetClientId ?? "";
+        let petName = "";
 
         if (presetPetId) {
           try {
             const pet = await getPet(presetPetId);
-            setClientId(pet.client_id);
+            clientId = pet.client_id;
+            petName = pet.name;
             const clientPets = await listPets(pet.client_id);
             setPets(clientPets);
-            setLines((prev) =>
-              prev.map((line, i) => (i === 0 ? { ...line, petId: pet.id } : line)),
-            );
-            return;
           } catch {
-            /* fall through */
+            /* ignore */
           }
         }
 
-        if (nextClientId) {
-          const clientPets = await listPets(nextClientId);
-          setPets(clientPets);
-          const firstPet = clientPets[0]?.id ?? "";
-          setLines((prev) =>
-            prev.map((line, i) => (i === 0 && !line.petId ? { ...line, petId: firstPet } : line)),
-          );
+        if (clientId) {
+          const client = c.find((x) => x.id === clientId);
+          if (client) {
+            setLinkedClientId(client.id);
+            setBillTo({
+              name: client.name,
+              address: client.address ?? "",
+              suburb: client.suburb ?? "",
+              phone: client.phone ?? "",
+              email: client.email ?? "",
+              petName,
+            });
+            if (!presetPetId) {
+              const clientPets = await listPets(client.id);
+              setPets(clientPets);
+            }
+          }
         }
       })
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"));
   }, [presetClientId, presetPetId]);
 
-  const onClientChange = async (id: string) => {
-    setClientId(id);
+  const filledLines: InvoiceLineSnapshot[] = useMemo(
+    () =>
+      lines
+        .map((l) => ({
+          date: l.date || invoiceDate,
+          description: l.description.trim(),
+          amount: Number(l.amount),
+          petName: billTo.petName.trim() || null,
+        }))
+        .filter((l) => l.description && Number.isFinite(l.amount) && l.amount >= 0),
+    [lines, invoiceDate, billTo.petName],
+  );
+
+  const total = filledLines.reduce((sum, l) => sum + l.amount, 0);
+  const payRef = paymentReference(billTo.name || "Client", invoiceNumber || "000");
+
+  const fillFromClient = async (id: string) => {
+    setLinkedClientId(id);
+    if (!id) return;
+    const client = clients.find((c) => c.id === id);
+    if (!client) return;
     try {
       const clientPets = await listPets(id);
       setPets(clientPets);
-      const firstPet = clientPets[0]?.id ?? "";
-      setLines((prev) => prev.map((line) => ({ ...line, petId: firstPet })));
+      setBillTo({
+        name: client.name,
+        address: client.address ?? "",
+        suburb: client.suburb ?? "",
+        phone: client.phone ?? "",
+        email: client.email ?? "",
+        petName: clientPets[0]?.name ?? billTo.petName,
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load pets");
+      setError(e instanceof Error ? e.message : "Could not load client");
     }
   };
 
   const updateLine = (id: string, patch: Partial<LineDraft>) => {
-    setLines((prev) =>
-      prev.map((line) => {
-        if (line.id !== id) return line;
-        const next = { ...line, ...patch };
-
-        if (patch.serviceKey && patch.serviceKey !== line.serviceKey) {
-          const first = getServiceRate(patch.serviceKey).options[0]?.key ?? "30";
-          next.durationKey = first;
-          next.extraPets = 0;
-          next.override = false;
-          if (patch.serviceKey === "custom") {
-            next.amount = next.amount || "0";
-          } else {
-            const quote = suggestInvoiceAmount({
-              serviceKey: patch.serviceKey,
-              durationKey: first,
-              extraPets: 0,
-            });
-            next.amount = String(quote.standardTotal);
-          }
-        }
-
-        if (patch.durationKey && !next.override && next.serviceKey !== "custom") {
-          const quote = suggestInvoiceAmount({
-            serviceKey: next.serviceKey,
-            durationKey: patch.durationKey,
-            extraPets: next.serviceKey === "pet_minding" ? next.extraPets : 0,
-          });
-          next.amount = String(quote.standardTotal);
-        }
-
-        if (patch.extraPets != null && !next.override && next.serviceKey === "pet_minding") {
-          const quote = suggestInvoiceAmount({
-            serviceKey: next.serviceKey,
-            durationKey: next.durationKey,
-            extraPets: patch.extraPets,
-          });
-          next.amount = String(quote.standardTotal);
-        }
-
-        if (patch.override === false && next.serviceKey !== "custom") {
-          const quote = suggestInvoiceAmount({
-            serviceKey: next.serviceKey,
-            durationKey: next.durationKey,
-            extraPets: next.serviceKey === "pet_minding" ? next.extraPets : 0,
-          });
-          next.amount = String(quote.standardTotal);
-        }
-
-        return next;
-      }),
-    );
+    setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
   };
 
-  const addLine = () => {
-    setLines((prev) => [
-      ...prev,
-      makeLine({
-        petId: prev[prev.length - 1]?.petId || pets[0]?.id || "",
-        serviceDate: prev[prev.length - 1]?.serviceDate || todayIso(),
-      }),
-    ]);
-  };
+  const pdfInput = () => ({
+    invoiceNumber,
+    invoiceDate,
+    dueDate,
+    billTo: {
+      name: billTo.name.trim(),
+      address: billTo.address.trim() || null,
+      suburb: billTo.suburb.trim() || null,
+      phone: billTo.phone.trim() || null,
+      email: billTo.email.trim() || null,
+      petName: billTo.petName.trim() || null,
+    },
+    lines: filledLines.map(({ date, description, amount }) => ({ date, description, amount })),
+    note: note.trim() || null,
+  });
 
-  const removeLine = (id: string) => {
-    setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.id !== id)));
-  };
+  const resolveClientId = async () => {
+    if (!ownerId) throw new Error("Not signed in.");
+    const name = billTo.name.trim();
+    if (!name) throw new Error("Enter a client name on Bill To.");
 
-  const selectedClient = clients.find((c) => c.id === clientId) ?? null;
+    if (linkedClientId) {
+      const linked = clients.find((c) => c.id === linkedClientId);
+      if (linked) {
+        // Keep profile in sync with what she typed on the invoice.
+        await upsertClient(
+          ownerId,
+          {
+            name,
+            address: billTo.address.trim() || null,
+            suburb: billTo.suburb.trim() || null,
+            phone: billTo.phone.trim() || null,
+            email: billTo.email.trim() || null,
+          },
+          linked.id,
+        );
+        return linked.id;
+      }
+    }
 
-  const resolvedLines: InvoiceLineSnapshot[] = useMemo(() => {
-    return lines.map((line) => {
-      const pet = pets.find((p) => p.id === line.petId);
-      const amount = Number(line.amount);
-      return {
-        date: line.serviceDate,
-        description: describeInvoiceLine({
-          serviceKey: line.serviceKey,
-          durationKey: line.durationKey,
-          petName: pet?.name,
-          extraPets: line.extraPets,
-          customDescription: line.customDescription,
-        }),
-        amount: Number.isFinite(amount) ? amount : 0,
-        petName: pet?.name ?? null,
-      };
+    const match = clients.find((c) => c.name.trim().toLowerCase() === name.toLowerCase());
+    if (match) {
+      await upsertClient(
+        ownerId,
+        {
+          name,
+          address: billTo.address.trim() || null,
+          suburb: billTo.suburb.trim() || null,
+          phone: billTo.phone.trim() || null,
+          email: billTo.email.trim() || null,
+        },
+        match.id,
+      );
+      return match.id;
+    }
+
+    const created = await upsertClient(ownerId, {
+      name,
+      address: billTo.address.trim() || null,
+      suburb: billTo.suburb.trim() || null,
+      phone: billTo.phone.trim() || null,
+      email: billTo.email.trim() || null,
+      notes: "Created from invoice",
     });
-  }, [lines, pets]);
-
-  const totalAmount = resolvedLines.reduce((sum, l) => sum + l.amount, 0);
-  const petNamesOnInvoice = [...new Set(resolvedLines.map((l) => l.petName).filter(Boolean))];
-
-  const pdfInput = () => {
-    if (!selectedClient) throw new Error("Pick a client.");
-    return {
-      invoiceNumber,
-      invoiceDate,
-      dueDate,
-      billTo: {
-        name: selectedClient.name,
-        address: selectedClient.address,
-        suburb: selectedClient.suburb,
-        phone: selectedClient.phone,
-        email: selectedClient.email,
-        petName:
-          petNamesOnInvoice.length === 0
-            ? null
-            : petNamesOnInvoice.length === 1
-              ? petNamesOnInvoice[0]
-              : petNamesOnInvoice.join(", "),
-      },
-      lines: resolvedLines.map(({ date, description, amount }) => ({
-        date,
-        description,
-        amount,
-      })),
-      note: freeNote.trim() || null,
-    };
+    return created.id;
   };
 
-  const goReview = () => {
+  const onSave = async () => {
+    if (!ownerId) return;
     setError(null);
-    if (!clientId) {
-      setError("Pick a client.");
+    if (!invoiceNumber.trim()) {
+      setError("Enter an invoice number.");
       return;
     }
     if (!invoiceDate || !dueDate) {
       setError("Invoice date and due date are required.");
       return;
     }
-    if (lines.length === 0) {
-      setError("Add at least one service line.");
+    if (!billTo.name.trim()) {
+      setError("Enter who to bill.");
       return;
     }
-    for (const [i, line] of lines.entries()) {
-      if (!line.serviceDate) {
-        setError(`Line ${i + 1}: pick a service date.`);
-        return;
-      }
-      if (line.serviceKey === "custom" && !line.customDescription.trim()) {
-        setError(`Line ${i + 1}: enter a description for the custom item.`);
-        return;
-      }
-      const amount = Number(line.amount);
-      if (!Number.isFinite(amount) || amount < 0) {
-        setError(`Line ${i + 1}: enter a valid amount.`);
-        return;
-      }
+    if (filledLines.length === 0) {
+      setError("Add at least one service line with a description and amount.");
+      return;
     }
-    setStep("review");
-  };
 
-  const onDownloadSaved = async () => {
     setBusy(true);
-    setError(null);
     try {
-      const filename = `Palmwoods-Paws-Invoice-${invoiceNumber}.pdf`;
-      if (savedPdfBytes) {
-        downloadPdfBytes(savedPdfBytes, filename);
-      } else if (savedPdfPath) {
-        await downloadStoredInvoicePdf(savedPdfPath, filename);
-      } else {
-        await downloadInvoicePdf(pdfInput(), filename);
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not download PDF");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const onCreate = async () => {
-    if (!ownerId || !clientId || !selectedClient) return;
-    setBusy(true);
-    setError(null);
-    try {
+      const clientId = await resolveClientId();
       const notes = buildInvoiceNotes({
-        invoiceNumber,
+        invoiceNumber: invoiceNumber.trim(),
         invoiceDateIso: invoiceDate,
-        lines: resolvedLines,
-        freeNote,
+        lines: filledLines,
+        freeNote: note,
       });
 
       const invoice = await createInvoice(ownerId, {
         client_id: clientId,
-        amount: totalAmount,
+        amount: total,
         due_on: dueDate,
         notes,
       });
@@ -353,7 +289,7 @@ function NewInvoicePage() {
         const saved = await saveInvoicePdfFile({
           ownerId,
           invoiceId: invoice.id,
-          invoiceNumber,
+          invoiceNumber: invoiceNumber.trim(),
           pdfBytes,
         });
         setSavedPdfPath(saved.path ?? null);
@@ -361,421 +297,351 @@ function NewInvoicePage() {
         console.warn("Cloud PDF save failed:", saveErr);
       }
 
-      downloadPdfBytes(pdfBytes, `Palmwoods-Paws-Invoice-${invoiceNumber}.pdf`);
+      downloadPdfBytes(pdfBytes, `Palmwoods-Paws-Invoice-${invoiceNumber.trim()}.pdf`);
       setStep("done");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not create invoice");
+      setError(e instanceof Error ? e.message : "Could not save invoice");
     } finally {
       setBusy(false);
     }
   };
 
-  return (
-    <div className="mx-auto max-w-xl space-y-4">
-      <PageHeader
-        title="Create invoice"
-        subtitle={
-          step === "details"
-            ? "Add one or more services — walks, visits, different dogs, anything for the week."
-            : step === "review"
-              ? "Check the lines, then save — the PDF downloads automatically."
-              : "Invoice saved. Download the PDF anytime."
-        }
-        action={
-          step !== "done" ? (
-            <Link to="/invoices">
-              <Button variant="secondary" size="sm">
-                Cancel
-              </Button>
-            </Link>
-          ) : undefined
-        }
-      />
+  const onDownloadAgain = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const filename = `Palmwoods-Paws-Invoice-${invoiceNumber.trim()}.pdf`;
+      if (savedPdfBytes) downloadPdfBytes(savedPdfBytes, filename);
+      else if (savedPdfPath) await downloadStoredInvoicePdf(savedPdfPath, filename);
+      else downloadPdfBytes(await buildInvoicePdf(pdfInput()), filename);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not download PDF");
+    } finally {
+      setBusy(false);
+    }
+  };
 
-      {error ? <p className="text-sm text-danger">{error}</p> : null}
-
-      {step === "details" ? (
-        <div className="space-y-4">
-          <Card className="space-y-4 p-5">
-            <div className="rounded-xl border border-olive-100 bg-cream/70 px-3 py-2 text-sm">
-              <span className="text-muted">Invoice #</span>{" "}
-              <span className="font-semibold text-olive-950">{invoiceNumber}</span>
-            </div>
-
-            <Field label="Client">
-              <select
-                className={inputClassName()}
-                required
-                value={clientId}
-                onChange={(e) => void onClientChange(e.target.value)}
-              >
-                <option value="">Select client…</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Field label="Invoice date">
-                <input
-                  className={inputClassName()}
-                  type="date"
-                  required
-                  value={invoiceDate}
-                  onChange={(e) => setInvoiceDate(e.target.value)}
-                />
-              </Field>
-              <Field label="Due date">
-                <input
-                  className={inputClassName()}
-                  type="date"
-                  required
-                  value={dueDate}
-                  onChange={(e) => setDueDate(e.target.value)}
-                />
-              </Field>
-            </div>
-          </Card>
-
-          {lines.map((line, index) => (
-            <LineEditor
-              key={line.id}
-              index={index}
-              line={line}
-              pets={pets}
-              canRemove={lines.length > 1}
-              onChange={(patch) => updateLine(line.id, patch)}
-              onRemove={() => removeLine(line.id)}
-            />
-          ))}
-
-          <Button
-            type="button"
-            variant="secondary"
-            className="min-h-12 w-full"
-            onClick={addLine}
-          >
-            <Plus className="h-4 w-4" />
-            Add another service
-          </Button>
-
-          <Card className="space-y-4 p-5">
-            <Field label="Extra note (optional)">
-              <textarea
-                className={inputClassName("min-h-20")}
-                value={freeNote}
-                onChange={(e) => setFreeNote(e.target.value)}
-                placeholder="Anything else for the invoice…"
-              />
-            </Field>
-
-            <div className="rounded-xl border border-olive-100 bg-olive-800 px-4 py-3 text-warm-white">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gold">
-                Invoice total ({lines.length} line{lines.length === 1 ? "" : "s"})
-              </p>
-              <p className="mt-1 font-display text-3xl">{formatMoney(totalAmount)}</p>
-            </div>
-
-            <Button
-              type="button"
-              variant="gold"
-              size="lg"
-              className="min-h-14 w-full"
-              onClick={goReview}
-            >
-              Continue → Review
-            </Button>
-          </Card>
-        </div>
-      ) : null}
-
-      {step === "review" ? (
-        <Card className="space-y-4 p-5">
-          <div>
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-dark">
-              Is this correct?
-            </p>
-            <h2 className="mt-1 font-display text-2xl text-olive-950">Invoice overview</h2>
-          </div>
-
-          <dl className="space-y-3 text-sm">
-            <OverviewRow label="Invoice #" value={invoiceNumber} />
-            <OverviewRow label="Client" value={selectedClient?.name ?? "—"} />
-            <OverviewRow
-              label="Due date"
-              value={format(new Date(`${dueDate}T12:00:00`), "d MMM yyyy")}
-            />
-          </dl>
-
-          <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-              Services
-            </p>
-            {resolvedLines.map((line, i) => (
-              <div
-                key={`${line.date}-${line.description}-${i}`}
-                className="flex items-start justify-between gap-3 border-b border-olive-100/80 pb-2 text-sm"
-              >
-                <div className="min-w-0">
-                  <p className="font-semibold text-olive-950">{line.description}</p>
-                  <p className="text-muted">
-                    {format(new Date(`${line.date}T12:00:00`), "EEE d MMM yyyy")}
-                  </p>
-                </div>
-                <p className="shrink-0 font-semibold text-olive-950">{formatMoney(line.amount)}</p>
-              </div>
-            ))}
-          </div>
-
-          {freeNote.trim() ? (
-            <p className="text-sm text-muted">
-              <span className="font-semibold text-olive-950">Note: </span>
-              {freeNote.trim()}
-            </p>
-          ) : null}
-
-          <div className="rounded-xl border border-olive-100 bg-olive-800 px-4 py-3 text-warm-white">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gold">Total</p>
-            <p className="mt-1 font-display text-3xl">{formatMoney(totalAmount)}</p>
-          </div>
-
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              type="button"
-              variant="secondary"
-              className="min-h-12 flex-1"
-              disabled={busy}
-              onClick={() => setStep("details")}
-            >
-              Back
-            </Button>
-            <Button
-              type="button"
-              variant="gold"
-              className="min-h-12 flex-1"
-              disabled={busy}
-              onClick={() => void onCreate()}
-            >
-              {busy ? "Saving PDF…" : "Save invoice & download PDF"}
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-
-      {step === "done" ? (
-        <Card className="space-y-4 p-5 text-center">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-dark">
+  if (step === "done") {
+    return (
+      <div className="mx-auto max-w-xl space-y-4 py-6">
+        <div className="rounded-2xl border border-[#e8ebdd] bg-[#fbfaf6] p-6 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#a8861f]">
             Saved
           </p>
-          <h2 className="font-display text-2xl text-olive-950">
+          <h1 className="mt-1 font-display text-2xl text-[#263126]">
             Invoice #{invoiceNumber} is ready
-          </h2>
-          <p className="text-sm text-muted">
-            {resolvedLines.length} service line{resolvedLines.length === 1 ? "" : "s"} ·{" "}
-            {formatMoney(totalAmount)}. Download now, or again later from Invoices.
+          </h1>
+          <p className="mt-2 text-sm text-[#667063]">
+            {filledLines.length} line{filledLines.length === 1 ? "" : "s"} · {formatMoney(total)}
           </p>
+          {error ? <p className="mt-3 text-sm text-danger">{error}</p> : null}
           <Button
             type="button"
             variant="gold"
             size="lg"
-            className="min-h-14 w-full"
+            className="mt-5 min-h-14 w-full"
             disabled={busy}
-            onClick={() => void onDownloadSaved()}
+            onClick={() => void onDownloadAgain()}
           >
             <Download className="h-4 w-4" />
             {busy ? "Preparing…" : "Download PDF"}
           </Button>
-          <Link to="/invoices" className="block">
+          <Link to="/invoices" className="mt-2 block">
             <Button type="button" variant="secondary" className="min-h-12 w-full">
               Back to invoices
             </Button>
           </Link>
-        </Card>
-      ) : null}
-    </div>
-  );
-}
-
-function LineEditor({
-  index,
-  line,
-  pets,
-  canRemove,
-  onChange,
-  onRemove,
-}: {
-  index: number;
-  line: LineDraft;
-  pets: Pet[];
-  canRemove: boolean;
-  onChange: (patch: Partial<LineDraft>) => void;
-  onRemove: () => void;
-}) {
-  const service = getServiceRate(line.serviceKey);
-  const quote = suggestInvoiceAmount({
-    serviceKey: line.serviceKey,
-    durationKey: line.durationKey,
-    extraPets: line.serviceKey === "pet_minding" ? line.extraPets : 0,
-  });
-  const isCustom = line.serviceKey === "custom";
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <Card className="space-y-3 p-5">
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-dark">
-          Service {index + 1}
-        </p>
-        {canRemove ? (
-          <button
-            type="button"
-            onClick={onRemove}
-            className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-sm font-medium text-danger hover:bg-danger/10"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Remove
-          </button>
-        ) : null}
+    <div className="mx-auto max-w-3xl space-y-4 pb-10">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-semibold text-olive-950">New invoice</h1>
+          <p className="mt-1 text-sm text-muted">
+            Fill it out like the paper template. Optionally load a saved client.
+          </p>
+        </div>
+        <Link to="/invoices">
+          <Button variant="secondary" size="sm">
+            Cancel
+          </Button>
+        </Link>
       </div>
 
-      <Field label="Pet (optional)">
-        <select
-          className={inputClassName()}
-          value={line.petId}
-          onChange={(e) => onChange({ petId: e.target.value })}
-          disabled={pets.length === 0}
-        >
-          <option value="">No specific pet</option>
-          {pets.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </Field>
+      {error ? <p className="text-sm text-danger">{error}</p> : null}
 
-      <Field label="Service">
-        <select
-          className={inputClassName()}
-          value={line.serviceKey}
-          onChange={(e) => onChange({ serviceKey: e.target.value as InvoiceServiceKey })}
-        >
-          {INVOICE_SERVICES.map((s) => (
-            <option key={s.key} value={s.key}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </Field>
-
-      {isCustom ? (
-        <Field label="Description">
-          <input
+      {/* Optional autofill — not part of the printed look */}
+      <div className="rounded-xl border border-olive-100 bg-warm-white p-3">
+        <label className="block space-y-1.5">
+          <span className="text-sm font-medium text-olive-900">
+            Autofill from saved client (optional)
+          </span>
+          <select
             className={inputClassName()}
-            value={line.customDescription}
-            onChange={(e) => onChange({ customDescription: e.target.value })}
-            placeholder="e.g. Weekend minding top-up, second dog walk…"
-          />
-        </Field>
-      ) : (
-        <Field label="Time / package">
-          <div className="grid grid-cols-2 gap-2">
-            {service.options.map((opt) => (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => onChange({ durationKey: opt.key })}
+            value={linkedClientId}
+            onChange={(e) => void fillFromClient(e.target.value)}
+          >
+            <option value="">Type Bill To manually…</option>
+            {clients.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+                {c.suburb ? ` · ${c.suburb}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {/* Visual invoice sheet */}
+      <div className="overflow-hidden rounded-2xl border border-[#e8ebdd] bg-[#fbfaf6] shadow-sm">
+        <div className="h-1.5 bg-[#e5b950]" />
+
+        <div className="space-y-6 p-5 sm:p-7">
+          {/* Header */}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <img
+                src={INVOICE_BUSINESS.logoPath}
+                alt="Palmwoods Paws"
+                className="h-16 w-auto rounded-md object-contain"
+              />
+            </div>
+            <div className="min-w-[12rem] space-y-2 text-right">
+              <p className="font-display text-3xl font-semibold tracking-wide text-[#5d6950]">
+                INVOICE
+              </p>
+              <label className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-wide text-[#e5b950]">
+                Invoice #
+                <input
+                  className={cn(fieldClass, "max-w-[5.5rem] text-right font-semibold text-[#263126]")}
+                  value={invoiceNumber}
+                  onChange={(e) => setInvoiceNumber(e.target.value)}
+                />
+              </label>
+              <label className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-wide text-[#e5b950]">
+                Date
+                <input
+                  className={cn(fieldClass, "max-w-[9.5rem]")}
+                  type="date"
+                  value={invoiceDate}
+                  onChange={(e) => setInvoiceDate(e.target.value)}
+                />
+              </label>
+              <label className="flex items-center justify-end gap-2 text-xs font-semibold uppercase tracking-wide text-[#e5b950]">
+                Due date
+                <input
+                  className={cn(fieldClass, "max-w-[9.5rem]")}
+                  type="date"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+              </label>
+            </div>
+          </div>
+
+          {/* FROM | BILL TO */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-[#f6f2e8] p-4">
+              <div className="mb-2 h-0.5 bg-[#e5b950]" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e5b950]">
+                From
+              </p>
+              <p className="mt-2 font-semibold text-[#263126]">{INVOICE_BUSINESS.tradingName}</p>
+              <p className="mt-1 text-sm text-[#667063]">{INVOICE_BUSINESS.location}</p>
+              <p className="text-sm text-[#667063]">Phone: {INVOICE_BUSINESS.phone}</p>
+              <p className="text-sm text-[#667063]">Email: {INVOICE_BUSINESS.email}</p>
+              <p className="text-sm text-[#667063]">ABN: {INVOICE_BUSINESS.abn}</p>
+            </div>
+
+            <div className="rounded-xl bg-[#f6f2e8] p-4">
+              <div className="mb-2 h-0.5 bg-[#e5b950]" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e5b950]">
+                Bill to
+              </p>
+              <div className="mt-2 space-y-2">
+                <input
+                  className={fieldClass}
+                  placeholder="Client name"
+                  value={billTo.name}
+                  onChange={(e) => setBillTo({ ...billTo, name: e.target.value })}
+                />
+                <input
+                  className={fieldClass}
+                  placeholder="Address"
+                  value={billTo.address}
+                  onChange={(e) => setBillTo({ ...billTo, address: e.target.value })}
+                />
+                <input
+                  className={fieldClass}
+                  placeholder="Suburb"
+                  value={billTo.suburb}
+                  onChange={(e) => setBillTo({ ...billTo, suburb: e.target.value })}
+                />
+                <input
+                  className={fieldClass}
+                  placeholder="Phone"
+                  value={billTo.phone}
+                  onChange={(e) => setBillTo({ ...billTo, phone: e.target.value })}
+                />
+                <input
+                  className={fieldClass}
+                  placeholder="Email"
+                  value={billTo.email}
+                  onChange={(e) => setBillTo({ ...billTo, email: e.target.value })}
+                />
+                <div className="flex gap-2">
+                  <input
+                    className={fieldClass}
+                    placeholder="Pet name (optional)"
+                    value={billTo.petName}
+                    onChange={(e) => setBillTo({ ...billTo, petName: e.target.value })}
+                    list="invoice-pet-suggestions"
+                  />
+                  {pets.length > 0 ? (
+                    <datalist id="invoice-pet-suggestions">
+                      {pets.map((p) => (
+                        <option key={p.id} value={p.name} />
+                      ))}
+                    </datalist>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Line items */}
+          <div className="overflow-hidden rounded-xl border border-[#e8ebdd]">
+            <div className="grid grid-cols-[7.5rem_1fr_6.5rem] gap-2 bg-[#5d6950] px-3 py-2.5 text-[11px] font-semibold uppercase tracking-wide text-white sm:grid-cols-[8.5rem_1fr_7rem]">
+              <span>Date</span>
+              <span>Service provided</span>
+              <span className="text-right">Amount</span>
+            </div>
+            {lines.map((line, index) => (
+              <div
+                key={line.id}
                 className={cn(
-                  "min-h-12 rounded-xl border px-3 py-2 text-left text-sm font-semibold transition",
-                  line.durationKey === opt.key
-                    ? "border-olive-800 bg-olive-800 text-warm-white"
-                    : "border-olive-100 bg-cream text-olive-950",
+                  "grid grid-cols-[7.5rem_1fr_6.5rem] items-center gap-2 border-t border-[#e8ebdd] px-2 py-2 sm:grid-cols-[8.5rem_1fr_7rem]",
+                  index % 2 === 0 ? "bg-white" : "bg-[#e8ebdd]/40",
                 )}
               >
-                <span className="block">{opt.label}</span>
-                <span
-                  className={cn(
-                    "text-xs font-medium",
-                    line.durationKey === opt.key ? "text-gold" : "text-muted",
-                  )}
-                >
-                  {formatMoney(opt.price)}
-                </span>
-              </button>
+                <input
+                  className={cn(fieldClass, "text-sm")}
+                  type="date"
+                  value={line.date}
+                  onChange={(e) => updateLine(line.id, { date: e.target.value })}
+                />
+                <div className="flex min-w-0 items-center gap-1">
+                  <input
+                    className={cn(fieldClass, "min-w-0 flex-1")}
+                    placeholder="e.g. Regular walk 30 min · Daisy"
+                    value={line.description}
+                    onChange={(e) => updateLine(line.id, { description: e.target.value })}
+                  />
+                  {lines.length > 1 ? (
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md p-2 text-[#b54a3c] hover:bg-[#b54a3c]/10"
+                      onClick={() => setLines((prev) => prev.filter((l) => l.id !== line.id))}
+                      aria-label="Remove line"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                </div>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-sm text-[#667063]">
+                    $
+                  </span>
+                  <input
+                    className={cn(fieldClass, "pl-5 text-right")}
+                    type="number"
+                    min={0}
+                    step="1"
+                    placeholder="0"
+                    value={line.amount}
+                    onChange={(e) => updateLine(line.id, { amount: e.target.value })}
+                  />
+                </div>
+              </div>
             ))}
           </div>
-        </Field>
-      )}
 
-      {line.serviceKey === "pet_minding" ? (
-        <Field label="Extra pets (+$10 each)">
-          <input
-            className={inputClassName()}
-            type="number"
-            min={0}
-            max={10}
-            value={line.extraPets}
-            onChange={(e) => onChange({ extraPets: Math.max(0, Number(e.target.value) || 0) })}
+          <button
+            type="button"
+            onClick={() =>
+              setLines((prev) => [
+                ...prev,
+                emptyLine(prev[prev.length - 1]?.date || todayIso()),
+              ])
+            }
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-[#5d6950] hover:text-[#46513d]"
+          >
+            <Plus className="h-4 w-4" />
+            Add another line
+          </button>
+
+          <textarea
+            className={cn(fieldClass, "min-h-16")}
+            placeholder="Optional note on the invoice…"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
           />
-        </Field>
-      ) : null}
 
-      <Field label="Service date">
-        <input
-          className={inputClassName()}
-          type="date"
-          required
-          value={line.serviceDate}
-          onChange={(e) => onChange({ serviceDate: e.target.value })}
-        />
-      </Field>
+          {/* Totals */}
+          <div className="ml-auto w-full max-w-[14rem] space-y-1">
+            <div className="flex items-center justify-between rounded-lg bg-[#f6f2e8] px-3 py-2 text-sm">
+              <span className="text-[#667063]">Subtotal</span>
+              <span className="font-semibold text-[#263126]">{formatMoney(total)}</span>
+            </div>
+            <div className="flex items-center justify-between rounded-lg bg-[#5d6950] px-3 py-2.5 text-white">
+              <span className="font-semibold">TOTAL</span>
+              <span className="font-display text-lg font-semibold">{formatMoney(total)}</span>
+            </div>
+          </div>
 
-      <div className="space-y-2 rounded-2xl border border-olive-100 bg-cream/60 p-3">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-olive-950">Amount</p>
-          {!isCustom ? (
-            <label className="flex items-center gap-2 text-sm font-medium text-olive-900">
-              <input
-                type="checkbox"
-                checked={line.override}
-                onChange={(e) => onChange({ override: e.target.checked })}
-              />
-              Override
-            </label>
-          ) : null}
+          {/* Payment */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-xl bg-[#f6f2e8] p-4">
+              <div className="mb-2 h-0.5 bg-[#e5b950]" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e5b950]">
+                Payment details
+              </p>
+              <p className="mt-2 text-sm text-[#263126]">Bank: {INVOICE_BUSINESS.bankName}</p>
+              <p className="text-sm text-[#263126]">BSB: {INVOICE_BUSINESS.bsb}</p>
+              <p className="text-sm text-[#263126]">
+                Account number: {INVOICE_BUSINESS.accountNumber}
+              </p>
+            </div>
+            <div className="rounded-xl bg-[#f6f2e8] p-4">
+              <div className="mb-2 h-0.5 bg-[#e5b950]" />
+              <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#e5b950]">
+                Payment reference
+              </p>
+              <p className="mt-2 font-semibold text-[#46513d]">{payRef}</p>
+              <p className="mt-3 text-sm text-[#667063]">{INVOICE_BUSINESS.thankYou}</p>
+            </div>
+          </div>
+
+          <div className="border-t border-[#e5b950] pt-4 text-center text-sm text-[#7b8177]">
+            {INVOICE_BUSINESS.tagline}
+          </div>
         </div>
-        {!isCustom ? (
-          <p className="text-sm text-muted">
-            Standard: {formatMoney(quote.standardTotal)}
-            {quote.extraTotal > 0
-              ? ` (${formatMoney(quote.base)} + ${formatMoney(quote.extraTotal)} extras)`
-              : ""}
-          </p>
-        ) : null}
-        <Field label="Amount ($)">
-          <input
-            className={inputClassName()}
-            type="number"
-            min={0}
-            step="1"
-            required
-            disabled={!isCustom && !line.override}
-            value={line.amount}
-            onChange={(e) => onChange({ amount: e.target.value, override: true })}
-          />
-        </Field>
       </div>
-    </Card>
-  );
-}
 
-function OverviewRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3 border-b border-olive-100/80 pb-2">
-      <dt className="shrink-0 text-muted">{label}</dt>
-      <dd className="text-right font-semibold text-olive-950">{value}</dd>
+      <Button
+        type="button"
+        variant="gold"
+        size="lg"
+        className="min-h-14 w-full"
+        disabled={busy}
+        onClick={() => void onSave()}
+      >
+        {busy ? "Saving PDF…" : "Save invoice & download PDF"}
+      </Button>
     </div>
   );
 }
