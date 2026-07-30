@@ -49,17 +49,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     body = {};
   }
 
-  const action = body.action === "download" ? "download" : "save";
+  const action =
+    body.action === "download" ? "download" : body.action === "delete" ? "delete" : "save";
 
   try {
     const sb = serviceClient();
     await ensureBucket(sb);
 
-    if (action === "download") {
+    if (action === "download" || action === "delete") {
       const path = typeof body.path === "string" ? body.path : "";
       if (!path || path.includes("..")) {
         return res.status(400).json({ error: "Valid PDF path required." });
       }
+
+      if (action === "delete") {
+        const { error } = await sb.storage.from(BUCKET).remove([path]);
+        if (error) {
+          return res.status(500).json({ error: error.message || "Could not delete PDF." });
+        }
+        return res.status(200).json({ ok: true });
+      }
+
       const { data, error } = await sb.storage.from(BUCKET).download(path);
       if (error || !data) {
         return res.status(404).json({ error: error?.message || "PDF not found." });

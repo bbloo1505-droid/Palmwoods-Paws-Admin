@@ -1,9 +1,14 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { format } from "date-fns";
-import { Download, Plus } from "lucide-react";
+import { Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
-import { downloadStoredInvoicePdf, listInvoices, markInvoicePaid } from "@/lib/api";
+import {
+  deleteInvoice,
+  downloadStoredInvoicePdf,
+  listInvoices,
+  markInvoicePaid,
+} from "@/lib/api";
 import { formatInvoiceNumber } from "@/lib/invoiceBusiness";
 import { downloadInvoicePdf } from "@/lib/invoicePdf";
 import { parseInvoiceNotes } from "@/lib/rates";
@@ -23,6 +28,7 @@ function InvoicesPage() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [pdfBusyId, setPdfBusyId] = useState<string | null>(null);
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
 
   const reload = async () => {
     const inv = await listInvoices();
@@ -46,6 +52,29 @@ function InvoicesPage() {
       setError(err instanceof Error ? err.message : "Could not mark paid");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const onDelete = async (inv: InvoiceRow) => {
+    const label = inv.client?.name ?? "this client";
+    const amount = formatMoney(inv.amount);
+    if (
+      !window.confirm(
+        `Are you sure you want to delete the invoice for ${label} (${amount})? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeleteBusyId(inv.id);
+    setError(null);
+    try {
+      await deleteInvoice(inv.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete invoice");
+    } finally {
+      setDeleteBusyId(null);
     }
   };
 
@@ -108,6 +137,40 @@ function InvoicesPage() {
     }
   };
 
+  const rowActions = (inv: InvoiceRow, opts?: { showMarkPaid?: boolean }) => (
+    <div className="flex flex-wrap gap-2">
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={pdfBusyId === inv.id}
+        onClick={() => void onDownloadPdf(inv)}
+      >
+        <Download className="h-4 w-4" />
+        {pdfBusyId === inv.id ? "PDF…" : "Download PDF"}
+      </Button>
+      <Link to="/invoices/new" search={{ editId: inv.id }}>
+        <Button size="sm" variant="secondary">
+          <Pencil className="h-4 w-4" />
+          Edit
+        </Button>
+      </Link>
+      {opts?.showMarkPaid ? (
+        <Button size="sm" disabled={busy} onClick={() => void onPaid(inv.id)}>
+          Mark paid
+        </Button>
+      ) : null}
+      <Button
+        size="sm"
+        variant="secondary"
+        disabled={deleteBusyId === inv.id}
+        onClick={() => void onDelete(inv)}
+      >
+        <Trash2 className="h-4 w-4" />
+        {deleteBusyId === inv.id ? "Deleting…" : "Delete"}
+      </Button>
+    </div>
+  );
+
   return (
     <div>
       <PageHeader
@@ -142,7 +205,7 @@ function InvoicesPage() {
               <Card key={inv.id} className="flex flex-wrap items-center justify-between gap-3">
                 <div className="min-w-0">
                   <p className="font-semibold text-olive-950">
-                    {inv.client?.name ?? "Client"} -+ {formatMoney(inv.amount)}
+                    {inv.client?.name ?? "Client"} · {formatMoney(inv.amount)}
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-muted">
                     {inv.due_on ? `Due ${format(new Date(inv.due_on), "d MMM")}` : "No due date"}
@@ -158,20 +221,7 @@ function InvoicesPage() {
                       : ""}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={pdfBusyId === inv.id}
-                    onClick={() => void onDownloadPdf(inv)}
-                  >
-                    <Download className="h-4 w-4" />
-                    {pdfBusyId === inv.id ? "PDFGǪ" : "Download PDF"}
-                  </Button>
-                  <Button size="sm" disabled={busy} onClick={() => void onPaid(inv.id)}>
-                    Mark paid
-                  </Button>
-                </div>
+                {rowActions(inv, { showMarkPaid: true })}
               </Card>
             ))}
           </div>
@@ -188,22 +238,14 @@ function InvoicesPage() {
               <Card key={inv.id} className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="font-semibold text-olive-950">
-                    {inv.client?.name ?? "Client"} -+ {formatMoney(inv.amount)}
+                    {inv.client?.name ?? "Client"} · {formatMoney(inv.amount)}
                   </p>
                   <p className="text-sm text-muted">
                     Paid {inv.paid_on ? format(new Date(inv.paid_on), "d MMM yyyy") : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    disabled={pdfBusyId === inv.id}
-                    onClick={() => void onDownloadPdf(inv)}
-                  >
-                    <Download className="h-4 w-4" />
-                    {pdfBusyId === inv.id ? "PDFGǪ" : "Download PDF"}
-                  </Button>
+                  {rowActions(inv)}
                   <span className="rounded-full bg-success/15 px-2 py-1 text-xs font-semibold text-success">
                     Paid
                   </span>

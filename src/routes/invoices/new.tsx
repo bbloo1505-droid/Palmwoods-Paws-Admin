@@ -7,11 +7,13 @@ import { Button, inputClassName } from "@/components/ui";
 import {
   createInvoice,
   downloadStoredInvoicePdf,
+  getInvoice,
   getPet,
   listClients,
   listPets,
   nextInvoiceNumber,
   saveInvoicePdfFile,
+  updateInvoice,
   upsertClient,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -21,13 +23,18 @@ import {
   paymentReference,
 } from "@/lib/invoiceBusiness";
 import { buildInvoicePdf, downloadPdfBytes } from "@/lib/invoicePdf";
-import { buildInvoiceNotes, type InvoiceLineSnapshot } from "@/lib/rates";
+import {
+  buildInvoiceNotes,
+  parseInvoiceNotes,
+  type InvoiceLineSnapshot,
+} from "@/lib/rates";
 import type { Client, Pet } from "@/lib/types";
 import { cn, formatMoney } from "@/lib/utils";
 
 const searchSchema = z.object({
   clientId: z.string().optional(),
   petId: z.string().optional(),
+  editId: z.string().optional(),
 });
 
 export const Route = createFileRoute("/invoices/new")({
@@ -74,13 +81,19 @@ const fieldClass =
 
 function NewInvoicePage() {
   const { ownerId } = useAuth();
-  const { clientId: presetClientId, petId: presetPetId } = Route.useSearch();
+  const {
+    clientId: presetClientId,
+    petId: presetPetId,
+    editId,
+  } = Route.useSearch();
+  const isEditing = Boolean(editId);
 
   const [step, setStep] = useState<Step>("edit");
   const [clients, setClients] = useState<Client[]>([]);
   const [pets, setPets] = useState<Pet[]>([]);
   const [linkedClientId, setLinkedClientId] = useState(presetClientId ?? "");
   const [busy, setBusy] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(isEditing);
   const [error, setError] = useState<string | null>(null);
   const [savedPdfPath, setSavedPdfPath] = useState<string | null>(null);
   const [savedPdfBytes, setSavedPdfBytes] = useState<Uint8Array | null>(null);
@@ -93,49 +106,118 @@ function NewInvoicePage() {
   const [note, setNote] = useState("");
 
   useEffect(() => {
-    nextInvoiceNumber()
-      .then((n) => setInvoiceNumber(formatInvoiceNumber(n)))
-      .catch(() => setInvoiceNumber("001"));
+    let cancelled = false;
 
-    listClients()
-      .then(async (c) => {
-        setClients(c);
-        let clientId = presetClientId ?? "";
-        let petName = "";
+    const load = async () => {
+      const c = await listClients();
+      if (cancelled) return;
+      setClients(c);
 
-        if (presetPetId) {
+      if (editId) {
+        setLoadingEdit(true);
+        try {
+          const inv = await getInvoice(editId);
+          if (cancelled) return;
+          const parsed = parseInvoiceNotes(inv.notes);
+          setInvoiceNumber(parsed.invoiceNumber ?? formatInvoiceNumber(1));
+          setInvoiceDate(
+            parsed.invoiceDateIso ??
+              (inv.created_at ? inv.created_at.slice(0, 10) : todayIso()),
+          );
+          setDueDate(inv.due_on ?? format(addDays(new Date(), 7), "yyyy-MM-dd"));
+          setLinkedClientId(inv.client_id);
+          setBillTo({
+            name: inv.client?.name ?? "",
+            address: inv.client?.address ?? "",
+            suburb: inv.client?.suburb ?? "",
+            phone: inv.client?.phone ?? "",
+            email: inv.client?.email ?? "",
+            petName: parsed.petName ?? "",
+          });
+          const draftLines =
+            parsed.lines.length > 0
+              ? parsed.lines.map((l) => ({
+                  id: newId(),
+                  date: l.date || todayIso(),
+                  description: l.description,
+                  amount: String(l.amount ?? ""),
+                }))
+              : [emptyLine()];
+          while (draftLines.length < 3) draftLines.push(emptyLine());
+          setLines(draftLines);
+          setNote(parsed.freeNote ?? "");
+          setSavedPdfPath(inv.pdf_path || parsed.pdfPath || null);
           try {
-            const pet = await getPet(presetPetId);
-            clientId = pet.client_id;
-            petName = pet.name;
-            const clientPets = await listPets(pet.client_id);
-            setPets(clientPets);
+            const clientPets = await listPets(inv.client_id);
+            if (!cancelled) setPets(clientPets);
           } catch {
             /* ignore */
           }
+        } catch (e) {
+          if (!cancelled) {
+            setError(e instanceof Error ? e.message : "Could not load invoice");
+          }
+        } finally {
+          if (!cancelled) setLoadingEdit(false);
         }
+        return;
+      }
 
-        if (clientId) {
-          const client = c.find((x) => x.id === clientId);
-          if (client) {
-            setLinkedClientId(client.id);
-            setBillTo({
-              name: client.name,
-              address: client.address ?? "",
-              suburb: client.suburb ?? "",
-              phone: client.phone ?? "",
-              email: client.email ?? "",
-              petName,
-            });
-            if (!presetPetId) {
+      nextInvoiceNumber()
+        .then((n) => {
+          if (!cancelled) setInvoiceNumber(formatInvoiceNumber(n));
+        })
+        .catch(() => {
+          if (!cancelled) setInvoiceNumber("001");
+        });
+
+      let clientId = presetClientId ?? "";
+      let petName = "";
+
+      if (presetPetId) {
+        try {
+          const pet = await getPet(presetPetId);
+          clientId = pet.client_id;
+          petName = pet.name;
+          const clientPets = await listPets(pet.client_id);
+          if (!cancelled) setPets(clientPets);
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (clientId) {
+        const client = c.find((x) => x.id === clientId);
+        if (client) {
+          setLinkedClientId(client.id);
+          setBillTo({
+            name: client.name,
+            address: client.address ?? "",
+            suburb: client.suburb ?? "",
+            phone: client.phone ?? "",
+            email: client.email ?? "",
+            petName,
+          });
+          if (!presetPetId) {
+            try {
               const clientPets = await listPets(client.id);
-              setPets(clientPets);
+              if (!cancelled) setPets(clientPets);
+            } catch {
+              /* ignore */
             }
           }
         }
-      })
-      .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"));
-  }, [presetClientId, presetPetId]);
+      }
+    };
+
+    load().catch((e) => {
+      if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [presetClientId, presetPetId, editId]);
 
   const filledLines: InvoiceLineSnapshot[] = useMemo(
     () =>
@@ -275,12 +357,19 @@ function NewInvoicePage() {
         freeNote: note,
       });
 
-      const invoice = await createInvoice(ownerId, {
-        client_id: clientId,
-        amount: total,
-        due_on: dueDate,
-        notes,
-      });
+      const invoice = editId
+        ? await updateInvoice(editId, {
+            client_id: clientId,
+            amount: total,
+            due_on: dueDate,
+            notes,
+          })
+        : await createInvoice(ownerId, {
+            client_id: clientId,
+            amount: total,
+            due_on: dueDate,
+            notes,
+          });
 
       const pdfBytes = await buildInvoicePdf(pdfInput());
       setSavedPdfBytes(pdfBytes);
@@ -326,7 +415,7 @@ function NewInvoicePage() {
       <div className="mx-auto max-w-xl space-y-4 py-6">
         <div className="rounded-2xl border border-[#e8ebdd] bg-[#fbfaf6] p-6 text-center">
           <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#a8861f]">
-            Saved
+            {isEditing ? "Updated" : "Saved"}
           </p>
           <h1 className="mt-1 font-display text-2xl text-[#263126]">
             Invoice #{invoiceNumber} is ready
@@ -356,13 +445,25 @@ function NewInvoicePage() {
     );
   }
 
+  if (loadingEdit) {
+    return (
+      <div className="mx-auto max-w-3xl py-10 text-center text-sm text-muted">
+        Loading invoice…
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 pb-10">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="font-display text-2xl font-semibold text-olive-950">New invoice</h1>
+          <h1 className="font-display text-2xl font-semibold text-olive-950">
+            {isEditing ? "Edit invoice" : "New invoice"}
+          </h1>
           <p className="mt-1 text-sm text-muted">
-            Fill it out like the paper template. Optionally load a saved client.
+            {isEditing
+              ? "Update the details, then save to refresh the PDF."
+              : "Fill it out like the paper template. Optionally load a saved client."}
           </p>
         </div>
         <Link to="/invoices">
@@ -640,7 +741,11 @@ function NewInvoicePage() {
         disabled={busy}
         onClick={() => void onSave()}
       >
-        {busy ? "Saving PDF…" : "Save invoice & download PDF"}
+        {busy
+          ? "Saving PDF…"
+          : isEditing
+            ? "Save changes & download PDF"
+            : "Save invoice & download PDF"}
       </Button>
     </div>
   );

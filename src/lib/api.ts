@@ -583,6 +583,78 @@ export async function markInvoicePaid(id: string) {
   return data as Invoice;
 }
 
+export async function getInvoice(id: string) {
+  const { data, error } = await supabase
+    .from("invoices")
+    .select(
+      "*, client:clients(id, name, phone, email, address, suburb)",
+    )
+    .eq("id", id)
+    .single();
+  if (error) throw error;
+  return data as Invoice & {
+    client: Pick<Client, "id" | "name" | "phone" | "email" | "address" | "suburb"> | null;
+  };
+}
+
+export async function updateInvoice(
+  id: string,
+  input: {
+    client_id?: string;
+    amount: number;
+    due_on?: string | null;
+    notes?: string | null;
+  },
+) {
+  const patch: Record<string, unknown> = {
+    amount: input.amount,
+    due_on: input.due_on ?? null,
+    notes: input.notes ?? null,
+  };
+  if (input.client_id) patch.client_id = input.client_id;
+
+  const { data, error } = await supabase
+    .from("invoices")
+    .update(patch)
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as Invoice;
+}
+
+export async function deleteStoredInvoicePdf(path: string) {
+  const res = await fetch("/api/invoice-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "delete", path }),
+  });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || "Could not delete invoice PDF");
+  }
+}
+
+export async function deleteInvoice(id: string) {
+  const inv = await getInvoice(id);
+  const notes = inv.notes ?? "";
+  const pdfPath =
+    inv.pdf_path ||
+    notes.match(/PDF_PATH:(\S+)/i)?.[1] ||
+    null;
+
+  const { error } = await supabase.from("invoices").delete().eq("id", id);
+  if (error) throw error;
+
+  if (pdfPath) {
+    try {
+      await deleteStoredInvoicePdf(pdfPath);
+    } catch (e) {
+      console.warn("Could not delete invoice PDF from storage:", e);
+    }
+  }
+}
+
 export async function listReminders(limit = 10) {
   const { data, error } = await supabase
     .from("reminders")
