@@ -475,10 +475,21 @@ export async function getVisitPhotoUrl(path: string) {
 export async function listInvoices() {
   const { data, error } = await supabase
     .from("invoices")
-    .select("*, client:clients(id, name)")
+    .select(
+      "*, client:clients(id, name, phone, email, address, suburb)",
+    )
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data ?? [];
+}
+
+/** Next printable invoice number (001, 002, …) based on existing rows. */
+export async function nextInvoiceNumber() {
+  const { count, error } = await supabase
+    .from("invoices")
+    .select("*", { count: "exact", head: true });
+  if (error) throw error;
+  return (count ?? 0) + 1;
 }
 
 export async function createInvoice(

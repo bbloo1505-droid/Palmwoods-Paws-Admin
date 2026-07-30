@@ -23,6 +23,7 @@ import { Route as BookingsBookingIdRouteImport } from './routes/bookings/$bookin
 import { Route as ClientsIndexRouteImport } from './routes/clients/index'
 import { Route as ClientsClientIdRouteImport } from './routes/clients/$clientId'
 import { Route as ClientsNewRouteImport } from './routes/clients/new'
+import { Route as InvoicesNewRouteImport } from './routes/invoices/new'
 import { Route as PawreportTokenRouteImport } from './routes/pawreport/$token'
 import { Route as PetsIndexRouteImport } from './routes/pets/index'
 import { Route as PetsPetIdRouteImport } from './routes/pets/$petId'
@@ -102,6 +103,11 @@ const ClientsNewRoute = ClientsNewRouteImport.update({
   path: '/clients/new',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InvoicesNewRoute = InvoicesNewRouteImport.update({
+  id: '/new',
+  path: '/new',
+  getParentRoute: () => InvoicesRoute,
+} as any)
 const PawreportTokenRoute = PawreportTokenRouteImport.update({
   id: '/pawreport/$token',
   path: '/pawreport/$token',
@@ -147,7 +153,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/gallery': typeof GalleryRoute
-  '/invoices': typeof InvoicesRoute
+  '/invoices': typeof InvoicesRouteWithChildren
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
@@ -157,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
+  '/invoices/new': typeof InvoicesNewRoute
   '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
@@ -171,7 +178,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/gallery': typeof GalleryRoute
-  '/invoices': typeof InvoicesRoute
+  '/invoices': typeof InvoicesRouteWithChildren
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
@@ -181,6 +188,7 @@ export interface FileRoutesByTo {
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
+  '/invoices/new': typeof InvoicesNewRoute
   '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
@@ -196,7 +204,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/calendar': typeof CalendarRoute
   '/gallery': typeof GalleryRoute
-  '/invoices': typeof InvoicesRoute
+  '/invoices': typeof InvoicesRouteWithChildren
   '/login': typeof LoginRoute
   '/messages': typeof MessagesRoute
   '/more': typeof MoreRoute
@@ -206,6 +214,7 @@ export interface FileRoutesById {
   '/bookings/$bookingId': typeof BookingsBookingIdRoute
   '/clients/$clientId': typeof ClientsClientIdRoute
   '/clients/new': typeof ClientsNewRoute
+  '/invoices/new': typeof InvoicesNewRoute
   '/pawreport/$token': typeof PawreportTokenRoute
   '/pets/$petId': typeof PetsPetIdRoute
   '/pets/new': typeof PetsNewRoute
@@ -232,6 +241,7 @@ export interface FileRouteTypes {
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
+    | '/invoices/new'
     | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
@@ -256,6 +266,7 @@ export interface FileRouteTypes {
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
+    | '/invoices/new'
     | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
@@ -280,6 +291,7 @@ export interface FileRouteTypes {
     | '/bookings/$bookingId'
     | '/clients/$clientId'
     | '/clients/new'
+    | '/invoices/new'
     | '/pawreport/$token'
     | '/pets/$petId'
     | '/pets/new'
@@ -295,7 +307,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CalendarRoute: typeof CalendarRoute
   GalleryRoute: typeof GalleryRoute
-  InvoicesRoute: typeof InvoicesRoute
+  InvoicesRoute: typeof InvoicesRouteWithChildren
   LoginRoute: typeof LoginRoute
   MessagesRoute: typeof MessagesRoute
   MoreRoute: typeof MoreRoute
@@ -415,6 +427,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientsNewRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/invoices/new': {
+      id: '/invoices/new'
+      path: '/new'
+      fullPath: '/invoices/new'
+      preLoaderRoute: typeof InvoicesNewRouteImport
+      parentRoute: typeof InvoicesRoute
+    }
     '/pawreport/$token': {
       id: '/pawreport/$token'
       path: '/pawreport/$token'
@@ -474,6 +493,18 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface InvoicesRouteChildren {
+  InvoicesNewRoute: typeof InvoicesNewRoute
+}
+
+const InvoicesRouteChildren: InvoicesRouteChildren = {
+  InvoicesNewRoute: InvoicesNewRoute,
+}
+
+const InvoicesRouteWithChildren = InvoicesRoute._addFileChildren(
+  InvoicesRouteChildren,
+)
+
 interface WalksWalkIdRouteChildren {
   WalksWalkIdReportRoute: typeof WalksWalkIdReportRoute
 }
@@ -490,7 +521,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CalendarRoute: CalendarRoute,
   GalleryRoute: GalleryRoute,
-  InvoicesRoute: InvoicesRoute,
+  InvoicesRoute: InvoicesRouteWithChildren,
   LoginRoute: LoginRoute,
   MessagesRoute: MessagesRoute,
   MoreRoute: MoreRoute,

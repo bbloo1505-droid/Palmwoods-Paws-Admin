@@ -94,7 +94,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   } catch {
     body = {};
   }
-  const action = body.action === "clear" ? "clear" : "load";
+  const action =
+    body.action === "clear"
+      ? "clear"
+      : body.action === "reset_test"
+        ? "reset_test"
+        : "load";
   const requestedOwner =
     typeof body.ownerId === "string" && UUID_RE.test(body.ownerId) ? body.ownerId : "";
 
@@ -200,6 +205,80 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return { hasWalks, hasReports, hasEnquiries };
   };
 
+  /** Wipe ALL operational data for this owner, then leave one blank test client. */
+  const resetToTestClient = async (ownerId: string) => {
+    const hasWalks = await tableExists("walks");
+    const hasReports = await tableExists("paw_reports");
+    const hasEnquiries = await tableExists("website_enquiries");
+
+    if (hasWalks) {
+      const { data: ownerWalks } = await sb.from("walks").select("id").eq("owner_id", ownerId);
+      const walkIds = (ownerWalks ?? []).map((w) => w.id as string);
+      if (walkIds.length) {
+        if (await tableExists("walk_track_points")) {
+          await sb.from("walk_track_points").delete().in("walk_id", walkIds);
+        }
+        if (hasReports) await sb.from("paw_reports").delete().in("walk_id", walkIds);
+        await sb.from("walks").delete().in("id", walkIds);
+      }
+    }
+
+    const { data: ownerBookings, error: bookListErr } = await sb
+      .from("bookings")
+      .select("id")
+      .eq("owner_id", ownerId);
+    throwIf(bookListErr, "list owner bookings");
+    const bookingIds = (ownerBookings ?? []).map((b) => b.id as string);
+
+    if (bookingIds.length) {
+      const { data: ownerVisits } = await sb
+        .from("visits")
+        .select("id")
+        .in("booking_id", bookingIds);
+      const visitIds = (ownerVisits ?? []).map((v) => v.id as string);
+      if (visitIds.length) {
+        await sb.from("visit_checklist_items").delete().in("visit_id", visitIds);
+        await sb.from("visit_photos").delete().in("visit_id", visitIds);
+        await sb.from("invoices").update({ visit_id: null }).in("visit_id", visitIds);
+        await sb.from("visits").delete().in("id", visitIds);
+      }
+      await sb.from("bookings").delete().in("id", bookingIds);
+    }
+
+    await sb.from("invoices").delete().eq("owner_id", ownerId);
+    await sb.from("reminders").delete().eq("owner_id", ownerId);
+    if (hasEnquiries) await sb.from("website_enquiries").delete().eq("owner_id", ownerId);
+
+    await sb.from("pets").delete().eq("owner_id", ownerId);
+
+    const { data: ownerClients } = await sb.from("clients").select("id").eq("owner_id", ownerId);
+    const allClientIds = (ownerClients ?? []).map((c) => c.id as string);
+    if (allClientIds.length) {
+      await sb.from("house_info").delete().in("client_id", allClientIds);
+      await sb.from("clients").delete().in("id", allClientIds);
+    }
+
+    // Also clear any leftover fixed demo ids (orphans after owner remap)
+    await clearDemo();
+
+    const TEST_CLIENT_ID = "e1111111-1111-4111-8111-111111111199";
+    const { error: insertErr } = await sb.from("clients").insert({
+      id: TEST_CLIENT_ID,
+      owner_id: ownerId,
+      name: "Test Client",
+      phone: null,
+      email: null,
+      address: null,
+      suburb: "Palmwoods",
+      preferred_payment: null,
+      emergency_contact: null,
+      notes: "Blank test client — fill in details, then create an invoice.",
+    });
+    throwIf(insertErr, "insert test client");
+
+    return { testClientId: TEST_CLIENT_ID, testClientName: "Test Client" };
+  };
+
   try {
     const OWNER = await resolveOwnerId();
 
@@ -221,6 +300,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         action: "clear",
         message: "Demo data removed.",
         ownerId: OWNER,
+      });
+    }
+
+    if (action === "reset_test") {
+      const result = await resetToTestClient(OWNER);
+      return res.status(200).json({
+        ok: true,
+        action: "reset_test",
+        message: "Cleared all data. One blank test client is ready for invoice testing.",
+        ownerId: OWNER,
+        ...result,
       });
     }
 

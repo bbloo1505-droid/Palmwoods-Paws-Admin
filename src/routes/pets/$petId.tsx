@@ -229,15 +229,26 @@ function PetDetailPage() {
           ) : (
             <div />
           )}
-          <Button
-            variant="gold"
-            size="lg"
-            className="w-full shrink-0 sm:w-auto"
-            disabled={busy || !client}
-            onClick={() => void onStartWalk()}
-          >
-            {busy ? "Starting…" : "Start Walk"}
-          </Button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <Link
+              to="/invoices/new"
+              search={{ clientId: pet.client_id, petId: pet.id }}
+              className="w-full sm:w-auto"
+            >
+              <Button variant="secondary" size="lg" className="w-full sm:w-auto">
+                Create invoice
+              </Button>
+            </Link>
+            <Button
+              variant="gold"
+              size="lg"
+              className="w-full shrink-0 sm:w-auto"
+              disabled={busy || !client}
+              onClick={() => void onStartWalk()}
+            >
+              {busy ? "Starting…" : "Start Walk"}
+            </Button>
+          </div>
         </div>
       </section>
 

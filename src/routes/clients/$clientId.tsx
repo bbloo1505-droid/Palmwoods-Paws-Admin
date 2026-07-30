@@ -103,12 +103,17 @@ function ClientDetailPage() {
         title={client.name}
         subtitle={[client.suburb, client.phone].filter(Boolean).join(" · ")}
         action={
-          <Link to="/pets/new" search={{ clientId }}>
-            <Button variant="gold">
-              <Plus className="h-4 w-4" />
-              Add pet
-            </Button>
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link to="/invoices/new" search={{ clientId }}>
+              <Button variant="secondary">Create invoice</Button>
+            </Link>
+            <Link to="/pets/new" search={{ clientId }}>
+              <Button variant="gold">
+                <Plus className="h-4 w-4" />
+                Add pet
+              </Button>
+            </Link>
+          </div>
         }
       />
       {message ? <p className="text-sm text-success">{message}</p> : null}
