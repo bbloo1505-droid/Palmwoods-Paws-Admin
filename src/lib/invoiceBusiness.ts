@@ -1,8 +1,9 @@
-/** Palmwoods Paws invoice letterhead — matches the paper template. */
+/** Palmwoods Paws invoice letterhead — matches Invoice Template Final. */
 
 export const INVOICE_BUSINESS = {
   tradingName: "Palmwoods Paws",
-  tagline: "Thoughtful care when you can't be there.",
+  /** Footer line from the Final Word template. */
+  tagline: "Caring for your pets like they're our own",
   location: "Palmwoods, Sunshine Coast QLD",
   phone: "0407 781 752",
   email: "contact@palmwoodspaws.com",
@@ -11,6 +12,8 @@ export const INVOICE_BUSINESS = {
   bsb: "638 060",
   accountNumber: "1701 55 37",
   thankYou: "Thank you for choosing Palmwoods Paws.",
+  /** Embedded logo from the Final Word template. */
+  logoPath: "/assets/invoices/template-logo.png",
 } as const;
 
 export function formatInvoiceNumber(n: number) {
