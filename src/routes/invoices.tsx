@@ -72,6 +72,20 @@ function InvoicesPage() {
         (inv.created_at ? inv.created_at.slice(0, 10) : format(new Date(), "yyyy-MM-dd"));
       const serviceDate = parsed.serviceDateIso ?? invoiceDate;
       const dueDate = inv.due_on ?? invoiceDate;
+      const lines =
+        parsed.lines.length > 0
+          ? parsed.lines.map((l) => ({
+              date: l.date || serviceDate,
+              description: l.description,
+              amount: Number(l.amount) || 0,
+            }))
+          : [
+              {
+                date: serviceDate,
+                description: parsed.serviceDescription ?? "Palmwoods Paws service",
+                amount: Number(inv.amount),
+              },
+            ];
       await downloadInvoicePdf({
         invoiceNumber,
         invoiceDate,
@@ -84,13 +98,7 @@ function InvoicesPage() {
           email: inv.client.email,
           petName: parsed.petName,
         },
-        lines: [
-          {
-            date: serviceDate,
-            description: parsed.serviceDescription ?? "Palmwoods Paws service",
-            amount: Number(inv.amount),
-          },
-        ],
+        lines,
         note: parsed.freeNote,
       });
     } catch (err) {
@@ -141,7 +149,11 @@ function InvoicesPage() {
                     {inv.notes
                       ? `\n${inv.notes
                           .split("\n")
-                          .filter((l) => !l.startsWith("PDF_PATH:"))
+                          .filter(
+                            (l) =>
+                              !l.startsWith("PDF_PATH:") &&
+                              !l.startsWith("LINES_JSON:"),
+                          )
                           .join("\n")}`
                       : ""}
                   </p>
