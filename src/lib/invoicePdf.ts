@@ -167,7 +167,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
   ];
   for (const [label, value] of metaRows) {
     const labelW = bold.widthOfTextAtSize(label, 8);
-    drawText(page, label, right - 150, metaY, bold, 8, soft);
+    drawText(page, label, right - 150, metaY, bold, 8, gold);
     drawText(page, value, right - 150 + labelW + 8, metaY, regular, 10, ink);
     metaY -= 15;
   }
@@ -319,7 +319,7 @@ export async function buildInvoicePdf(input: InvoicePdfInput): Promise<Uint8Arra
 
   if (input.note?.trim()) {
     y -= 10;
-    drawText(page, "Note", left, y, bold, 8, soft);
+    drawText(page, "Note", left, y, bold, 8, muted);
     y -= 12;
     for (const nl of wrapText(input.note.trim(), regular, 9, contentWidth)) {
       drawText(page, nl, left, y, regular, 9, muted);
