@@ -519,6 +519,59 @@ export async function createInvoice(
   return data as Invoice;
 }
 
+/** Save a generated invoice PDF to storage (via API) and record its path on the invoice. */
+export async function saveInvoicePdfFile(input: {
+  ownerId: string;
+  invoiceId: string;
+  invoiceNumber: string;
+  pdfBytes: Uint8Array;
+}) {
+  const base64 = btoa(Array.from(input.pdfBytes, (b) => String.fromCharCode(b)).join(""));
+  const res = await fetch("/api/invoice-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "save",
+      ownerId: input.ownerId,
+      invoiceId: input.invoiceId,
+      invoiceNumber: input.invoiceNumber,
+      pdfBase64: base64,
+    }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    path?: string;
+    invoice?: Invoice;
+  };
+  if (!res.ok) throw new Error(data.error || "Could not save invoice PDF");
+  return data;
+}
+
+export async function downloadStoredInvoicePdf(path: string, filename: string) {
+  const res = await fetch("/api/invoice-pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "download", path }),
+  });
+  const data = (await res.json().catch(() => ({}))) as {
+    error?: string;
+    pdfBase64?: string;
+    filename?: string;
+  };
+  if (!res.ok || !data.pdfBase64) throw new Error(data.error || "Could not download PDF");
+
+  const binary = atob(data.pdfBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: "application/pdf" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = data.filename || filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export async function markInvoicePaid(id: string) {
   const { data, error } = await supabase
     .from("invoices")

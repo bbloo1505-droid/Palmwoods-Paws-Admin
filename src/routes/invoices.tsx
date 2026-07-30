@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { Download, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
-import { listInvoices, markInvoicePaid } from "@/lib/api";
+import { downloadStoredInvoicePdf, listInvoices, markInvoicePaid } from "@/lib/api";
 import { formatInvoiceNumber } from "@/lib/invoiceBusiness";
 import { downloadInvoicePdf } from "@/lib/invoicePdf";
 import { parseInvoiceNotes } from "@/lib/rates";
@@ -50,15 +50,23 @@ function InvoicesPage() {
   };
 
   const onDownloadPdf = async (inv: InvoiceRow) => {
-    if (!inv.client) {
-      setError("Client details missing for this invoice.");
-      return;
-    }
     setPdfBusyId(inv.id);
     setError(null);
     try {
       const parsed = parseInvoiceNotes(inv.notes);
       const invoiceNumber = parsed.invoiceNumber ?? formatInvoiceNumber(1);
+      const filename = `Palmwoods-Paws-Invoice-${invoiceNumber}.pdf`;
+      const storedPath = inv.pdf_path || parsed.pdfPath;
+
+      if (storedPath) {
+        await downloadStoredInvoicePdf(storedPath, filename);
+        return;
+      }
+
+      if (!inv.client) {
+        throw new Error("Client details missing for this invoice.");
+      }
+
       const invoiceDate =
         parsed.invoiceDateIso ??
         (inv.created_at ? inv.created_at.slice(0, 10) : format(new Date(), "yyyy-MM-dd"));
@@ -130,7 +138,12 @@ function InvoicesPage() {
                   </p>
                   <p className="whitespace-pre-wrap text-sm text-muted">
                     {inv.due_on ? `Due ${format(new Date(inv.due_on), "d MMM")}` : "No due date"}
-                    {inv.notes ? `\n${inv.notes}` : ""}
+                    {inv.notes
+                      ? `\n${inv.notes
+                          .split("\n")
+                          .filter((l) => !l.startsWith("PDF_PATH:"))
+                          .join("\n")}`
+                      : ""}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -141,7 +154,7 @@ function InvoicesPage() {
                     onClick={() => void onDownloadPdf(inv)}
                   >
                     <Download className="h-4 w-4" />
-                    {pdfBusyId === inv.id ? "PDF…" : "PDF"}
+                    {pdfBusyId === inv.id ? "PDF…" : "Download PDF"}
                   </Button>
                   <Button size="sm" disabled={busy} onClick={() => void onPaid(inv.id)}>
                     Mark paid
@@ -177,7 +190,7 @@ function InvoicesPage() {
                     onClick={() => void onDownloadPdf(inv)}
                   >
                     <Download className="h-4 w-4" />
-                    {pdfBusyId === inv.id ? "PDF…" : "PDF"}
+                    {pdfBusyId === inv.id ? "PDF…" : "Download PDF"}
                   </Button>
                   <span className="rounded-full bg-success/15 px-2 py-1 text-xs font-semibold text-success">
                     Paid

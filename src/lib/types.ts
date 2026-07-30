@@ -124,6 +124,8 @@ export type Invoice = {
   due_on: string | null;
   paid_on: string | null;
   notes: string | null;
+  /** Storage path in the invoice-pdfs bucket, when a PDF has been saved. */
+  pdf_path?: string | null;
   created_at: string;
 };
 

@@ -155,6 +155,7 @@ export function parseInvoiceNotes(notes: string | null | undefined) {
         !/^Date:/i.test(l) &&
         !/^Extra pets:/i.test(l) &&
         !/^Rate:/i.test(l) &&
+        !/^PDF_PATH:/i.test(l) &&
         !l.includes("·"),
     );
   return {
@@ -164,5 +165,6 @@ export function parseInvoiceNotes(notes: string | null | undefined) {
     petName,
     serviceDescription: serviceLine,
     freeNote: freeNoteLines.join("\n") || null,
+    pdfPath: text.match(/PDF_PATH:(\S+)/i)?.[1] ?? null,
   };
 }

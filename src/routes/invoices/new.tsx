@@ -1,12 +1,21 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { addDays, format } from "date-fns";
+import { Download } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { Button, Card, Field, PageHeader, inputClassName } from "@/components/ui";
-import { createInvoice, getPet, listClients, listPets, nextInvoiceNumber } from "@/lib/api";
+import {
+  createInvoice,
+  downloadStoredInvoicePdf,
+  getPet,
+  listClients,
+  listPets,
+  nextInvoiceNumber,
+  saveInvoicePdfFile,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { formatInvoiceNumber } from "@/lib/invoiceBusiness";
-import { downloadInvoicePdf } from "@/lib/invoicePdf";
+import { buildInvoicePdf, downloadInvoicePdf, downloadPdfBytes } from "@/lib/invoicePdf";
 import {
   INVOICE_SERVICES,
   buildInvoiceNotes,
@@ -28,11 +37,10 @@ export const Route = createFileRoute("/invoices/new")({
   component: NewInvoicePage,
 });
 
-type Step = "details" | "review";
+type Step = "details" | "review" | "done";
 
 function NewInvoicePage() {
   const { ownerId } = useAuth();
-  const navigate = useNavigate();
   const { clientId: presetClientId, petId: presetPetId } = Route.useSearch();
 
   const [step, setStep] = useState<Step>("details");
@@ -41,6 +49,8 @@ function NewInvoicePage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invoiceSeq, setInvoiceSeq] = useState(1);
+  const [savedPdfPath, setSavedPdfPath] = useState<string | null>(null);
+  const [savedPdfBytes, setSavedPdfBytes] = useState<Uint8Array | null>(null);
 
   const [clientId, setClientId] = useState(presetClientId ?? "");
   const [petId, setPetId] = useState(presetPetId ?? "");
@@ -100,12 +110,10 @@ function NewInvoicePage() {
       .catch((e) => setError(e instanceof Error ? e.message : "Failed to load"));
   }, [presetClientId, presetPetId]);
 
-  // Keep amount in sync with rate card unless overridden.
   useEffect(() => {
     if (!override) setAmount(String(quote.standardTotal));
   }, [quote.standardTotal, override]);
 
-  // When service changes, reset duration to first option for that service.
   useEffect(() => {
     const first = getServiceRate(serviceKey).options[0]?.key ?? "30";
     setDurationKey(first);
@@ -184,13 +192,20 @@ function NewInvoicePage() {
     setStep("review");
   };
 
-  const onPreviewPdf = async () => {
+  const onDownloadSaved = async () => {
     setBusy(true);
     setError(null);
     try {
-      await downloadInvoicePdf(pdfInput());
+      const filename = `Palmwoods-Paws-Invoice-${invoiceNumber}.pdf`;
+      if (savedPdfBytes) {
+        downloadPdfBytes(savedPdfBytes, filename);
+      } else if (savedPdfPath) {
+        await downloadStoredInvoicePdf(savedPdfPath, filename);
+      } else {
+        await downloadInvoicePdf(pdfInput(), filename);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not build PDF");
+      setError(e instanceof Error ? e.message : "Could not download PDF");
     } finally {
       setBusy(false);
     }
@@ -216,14 +231,32 @@ function NewInvoicePage() {
         extraTotal: quote.extraTotal,
         freeNote,
       });
-      await createInvoice(ownerId, {
+
+      const invoice = await createInvoice(ownerId, {
         client_id: clientId,
         amount: finalAmount,
         due_on: dueDate,
         notes,
       });
-      await downloadInvoicePdf(pdfInput());
-      void navigate({ to: "/invoices" });
+
+      const pdfBytes = await buildInvoicePdf(pdfInput());
+      setSavedPdfBytes(pdfBytes);
+
+      try {
+        const saved = await saveInvoicePdfFile({
+          ownerId,
+          invoiceId: invoice.id,
+          invoiceNumber,
+          pdfBytes,
+        });
+        setSavedPdfPath(saved.path ?? null);
+      } catch (saveErr) {
+        // Invoice row is saved; PDF still downloads locally even if cloud save fails.
+        console.warn("Cloud PDF save failed:", saveErr);
+      }
+
+      downloadPdfBytes(pdfBytes, `Palmwoods-Paws-Invoice-${invoiceNumber}.pdf`);
+      setStep("done");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not create invoice");
     } finally {
@@ -237,15 +270,19 @@ function NewInvoicePage() {
         title="Create invoice"
         subtitle={
           step === "details"
-            ? "Fill Anna’s invoice template for this client — review, then save & download PDF."
-            : "Is this correct? Creating saves it and downloads the PDF."
+            ? "Fill in the service details for this client."
+            : step === "review"
+              ? "Check everything, then save — the PDF downloads automatically."
+              : "Invoice saved. Download the PDF anytime."
         }
         action={
-          <Link to="/invoices">
-            <Button variant="secondary" size="sm">
-              Cancel
-            </Button>
-          </Link>
+          step !== "done" ? (
+            <Link to="/invoices">
+              <Button variant="secondary" size="sm">
+                Cancel
+              </Button>
+            </Link>
+          ) : undefined
         }
       />
 
@@ -429,7 +466,9 @@ function NewInvoicePage() {
             Continue → Review
           </Button>
         </Card>
-      ) : (
+      ) : null}
+
+      {step === "review" ? (
         <Card className="space-y-4 p-5">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-dark">
@@ -441,87 +480,75 @@ function NewInvoicePage() {
           <dl className="space-y-3 text-sm">
             <OverviewRow label="Invoice #" value={invoiceNumber} />
             <OverviewRow label="Client" value={selectedClient?.name ?? "—"} />
-            <OverviewRow
-              label="Bill to"
-              value={
-                [
-                  selectedClient?.address,
-                  selectedClient?.suburb,
-                  selectedClient?.phone,
-                  selectedClient?.email,
-                ]
-                  .filter(Boolean)
-                  .join(" · ") || "Add address/phone on client profile"
-              }
-            />
             <OverviewRow label="Pet" value={selectedPet?.name ?? "—"} />
             <OverviewRow label="Service" value={quote.serviceLabel} />
             <OverviewRow label="Time" value={quote.durationLabel} />
             <OverviewRow label="Service date" value={dateLabel} />
             <OverviewRow
-              label="Invoice date"
-              value={format(new Date(`${invoiceDate}T12:00:00`), "d MMM yyyy")}
-            />
-            <OverviewRow
               label="Due date"
               value={format(new Date(`${dueDate}T12:00:00`), "d MMM yyyy")}
             />
-            {serviceKey === "pet_minding" && extraPets > 0 ? (
-              <OverviewRow
-                label="Extra pets"
-                value={`${extraPets} × ${formatMoney(quote.extraPetPrice)} = ${formatMoney(quote.extraTotal)}`}
-              />
-            ) : null}
-            <OverviewRow label="Standard rate" value={formatMoney(quote.standardTotal)} />
             <div className="rounded-xl border border-olive-100 bg-olive-800 px-4 py-3 text-warm-white">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-gold">
                 Amount on invoice
               </p>
               <p className="mt-1 font-display text-3xl">{formatMoney(finalAmount)}</p>
-              {overridden ? (
-                <p className="mt-1 text-sm text-warm-white/80">
-                  Override · standard was {formatMoney(quote.standardTotal)}
-                </p>
-              ) : (
-                <p className="mt-1 text-sm text-warm-white/80">Standard rate</p>
-              )}
             </div>
-            {freeNote.trim() ? <OverviewRow label="Note" value={freeNote.trim()} /> : null}
           </dl>
 
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <Button
               type="button"
               variant="secondary"
-              className="min-h-12 w-full"
+              className="min-h-12 flex-1"
               disabled={busy}
-              onClick={() => void onPreviewPdf()}
+              onClick={() => setStep("details")}
             >
-              Preview PDF
+              Back
             </Button>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button
-                type="button"
-                variant="secondary"
-                className="min-h-12 flex-1"
-                disabled={busy}
-                onClick={() => setStep("details")}
-              >
-                Back
-              </Button>
-              <Button
-                type="button"
-                variant="gold"
-                className="min-h-12 flex-1"
-                disabled={busy}
-                onClick={() => void onCreate()}
-              >
-                {busy ? "Creating…" : "Create & download PDF"}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="gold"
+              className="min-h-12 flex-1"
+              disabled={busy}
+              onClick={() => void onCreate()}
+            >
+              {busy ? "Saving PDF…" : "Save invoice & download PDF"}
+            </Button>
           </div>
         </Card>
-      )}
+      ) : null}
+
+      {step === "done" ? (
+        <Card className="space-y-4 p-5 text-center">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-gold-dark">
+            Saved
+          </p>
+          <h2 className="font-display text-2xl text-olive-950">
+            Invoice #{invoiceNumber} is ready
+          </h2>
+          <p className="text-sm text-muted">
+            The PDF was saved with this invoice. Download it now, or again later from the Invoices
+            list.
+          </p>
+          <Button
+            type="button"
+            variant="gold"
+            size="lg"
+            className="min-h-14 w-full"
+            disabled={busy}
+            onClick={() => void onDownloadSaved()}
+          >
+            <Download className="h-4 w-4" />
+            {busy ? "Preparing…" : "Download PDF"}
+          </Button>
+          <Link to="/invoices" className="block">
+            <Button type="button" variant="secondary" className="min-h-12 w-full">
+              Back to invoices
+            </Button>
+          </Link>
+        </Card>
+      ) : null}
     </div>
   );
 }
